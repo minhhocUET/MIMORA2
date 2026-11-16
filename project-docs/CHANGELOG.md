@@ -1,0 +1,309 @@
+# MIMORA — Changelog
+
+Mọi thay đổi kỹ thuật và quyết định kiến trúc có bằng chứng được ghi nhận theo thứ tự thời gian. Không xóa lịch sử cũ.
+
+---
+
+## [P1-03B2D] — 2026-11-16
+**Mục tiêu:** Dọn dẹp hậu migration (`mimora-p1-03b2b-external-migration.zip`), đánh giá khả năng gỡ bỏ `TIDB_MIGRATOR_*` khỏi AI Studio Secrets, và cập nhật tài liệu trạng thái dự án.
+
+- **Nội dung thay đổi & kiểm tra:**
+  - Xóa `/mimora-p1-03b2b-external-migration.zip` khỏi workspace root; kiểm tra toàn workspace xác nhận không còn file `.zip` nào khác và không có bản sao trong `public/`, `static/` hay `dist/`.
+  - Kiểm tra mã nguồn (`server.ts`, `src/`, `package.json`, `vite.config.ts`) xác nhận runtime chỉ tham chiếu `TIDB_HOST`, `TIDB_PORT`, `TIDB_USER`, `TIDB_PASSWORD`, `TIDB_DATABASE` trong `src/server/db/tidb.ts` và không phụ thuộc `TIDB_MIGRATOR_*`.
+  - Ghi nhận giới hạn giao diện: Google AI Studio Secrets không hỗ trợ chỉnh sửa/xóa an toàn từ công cụ agent trong container; đã lập hướng dẫn thủ công cho operator xóa `TIDB_MIGRATOR_USER` và `TIDB_MIGRATOR_PASSWORD` qua AI Studio UI kèm full workspace restart.
+  - Cập nhật `project-docs/{PROJECT_STATE,ARCHITECTURE,CHANGELOG,KNOWN_ISSUES}.md` ghi nhận kết quả `P1-03B2B` (`PASS`), `P1-03B2C` (`PASS`) và giữ mở các hạng mục chưa kiểm thử (`DML`, composite FK enforcement, virtual generated-column unique guards, `SHOW CREATE TABLE` parity, và cleanup `TIDB_MIGRATOR_*` Secrets).
+- **Files / modules affected:**
+  - `/mimora-p1-03b2b-external-migration.zip` (đã xóa khỏi workspace)
+  - `project-docs/{PROJECT_STATE,ARCHITECTURE,CHANGELOG,KNOWN_ISSUES}.md` (cập nhật)
+- **Phạm vi tuân thủ:** Không chạy migration/seed/DDL/DML, không sửa account/grants TiDB, không sửa code runtime/schema/migration SQL (`drizzle/0000_mimora_mvp_init.sql` giữ nguyên SHA-256 `eec9f4669bf5f7850eb2cf5ca7f975585609334722e44ee4b5339ada2a16c765`).
+
+---
+
+## [P1-03B2C] — 2026-11-16
+**Mục tiêu:** Xác minh ứng dụng runtime kết nối thành công tới database `test` đã migrate bằng tài khoản least-privilege `mimora_runtime`.
+
+- **Bằng chứng xác minh đã ghi nhận (`PASS`):**
+  - `GET /api/v1/db/health` qua cả Express (`127.0.0.1:3000`) và container Nginx (`127.0.0.1:8080`) đều trả `HTTP 200 OK` (`{"status":"ok","database":"connected","orm":"drizzle","driver":"mysql2","tls":"required-min-v1.2-verified","serverVersion":"8.0.11-TiDB-v8.5.3-serverless"}`), không lộ secrets.
+  - Kết nối read-only độc lập bằng `TIDB_USER` / `TIDB_PASSWORD` xác nhận: `DATABASE() = 'test'`, `CURRENT_USER() = '3rtMqHg6yoxMH5d.mimora_runtime@%'`, `VERSION() = '8.0.11-TiDB-v8.5.3-serverless'`, `Ssl_version = TLSv1.3` (`TLS_AES_128_GCM_SHA256`), `SHOW GRANTS` chỉ gồm `USAGE ON *.*` và `SELECT, INSERT, UPDATE, DELETE ON test.*`, thấy `23` base tables, `51` foreign keys, row `__drizzle_migrations` khớp hash `eec9f4669bf5f7850eb2cf5ca7f975585609334722e44ee4b5339ada2a16c765`, và `SELECT COUNT(*) FROM users` trả `0`.
+
+---
+
+## [P1-03B2B / P1-03B2B-PREFLIGHT / P1-03B2B-EXPORT] — 2026-11-16
+**Mục tiêu:** Đánh giá sẵn sàng migration, đóng gói artifact thực thi bên ngoài (Path A), và thực thi thành công migration ban đầu lên TiDB database `test`.
+
+- **Bằng chứng xác minh đã ghi nhận (`PASS`):**
+  - `P1-03B2B-PREFLIGHT` & `P1-03B2B-EXPORT`: Kiểm tra `drizzle/0000_mimora_mvp_init.sql` (SHA-256 `eec9f4669bf5f7850eb2cf5ca7f975585609334722e44ee4b5339ada2a16c765`, 103 statements, 0 lỗi FK tĩnh) và xuất gói ZIP sạch cho operator thực thi bên ngoài (Path A).
+  - `P1-03B2B`: Thực thi migration bên ngoài thành công lên TiDB `test` bằng tài khoản migrator (`3rtMqHg6yoxMH5d.mimora_migrator`), tạo đủ `23` base tables (`22` bảng ứng dụng + `__drizzle_migrations`), `51` foreign keys, `5` virtual generated columns, ghi nhận `__drizzle_migrations` hash `eec9f4669bf5f7850eb2cf5ca7f975585609334722e44ee4b5339ada2a16c765` (`created_at = 1794764487312`).
+
+---
+
+## [P1-03B2A-CONFIG] — 2026-11-16
+**Mục tiêu:** Tách biệt hoàn toàn credentials của Drizzle Kit (`drizzle.config.ts`) sang tài khoản migrator (`TIDB_MIGRATOR_USER` / `TIDB_MIGRATOR_PASSWORD`), tách khỏi tài khoản runtime của `server.ts` (`TIDB_USER` / `TIDB_PASSWORD`) trước `P1-03B2B`.
+
+- **Nội dung thay đổi:**
+  - Cập nhật `drizzle.config.ts` thay `TIDB_USER` / `TIDB_PASSWORD` bằng `TIDB_MIGRATOR_USER` / `TIDB_MIGRATOR_PASSWORD`, bổ sung `getMigratorDbCredentials()` fail-fast với thông báo lỗi đã làm sạch (không fallback sang credentials runtime, không log secret), giữ nguyên `dialect: 'mysql'`, `schema`, `out: './drizzle'`, `breakpoints`, `strict`, `verbose`, `ssl: { rejectUnauthorized: true }`.
+  - Kiểm tra `package.json`, `server.ts`, `src/` xác nhận không có script migration nào đi vòng qua `drizzle.config.ts`; `src/server/db/tidb.ts` vẫn chỉ dùng `TIDB_USER` / `TIDB_PASSWORD`.
+  - Cập nhật `.env.example` phân tách rõ biến runtime (`TIDB_USER`, `TIDB_PASSWORD`) và biến migrator (`TIDB_MIGRATOR_USER`, `TIDB_MIGRATOR_PASSWORD`) bằng placeholder rỗng.
+  - Cập nhật `project-docs/{PROJECT_STATE,ARCHITECTURE,CHANGELOG,KNOWN_ISSUES}.md`.
+- **Files / modules affected:**
+  - `drizzle.config.ts`, `.env.example`
+  - `project-docs/{PROJECT_STATE,ARCHITECTURE,CHANGELOG,KNOWN_ISSUES}.md`
+- **Phạm vi tuân thủ:** Không chạy `drizzle-kit migrate` / `push` / `generate`, không chạy DDL/DML/seed, không thay đổi TiDB users/grants, không sửa `src/server/db/schema/*` hay `drizzle/*`.
+- **Tests:** `tsc --noEmit`, `vite build`, `npx tsx --test src/server/db/schema.test.ts`, kiểm tra fail-fast không fallback của `drizzle.config.ts`, `npx drizzle-kit check` (với placeholder offline), kiểm tra `dist/` không chứa secrets/migrator vars.
+- **Lưu ý Git:** Thư mục `.git/` không còn trong workspace sau lần cold restart container (`2026-11-16`); không tạo commit.
+- **Trạng thái chấp nhận:** Hoàn tất cấu hình tách credentials; **dừng trước `P1-03B2B`** chờ Technical Lead phê duyệt.
+
+---
+
+## [P1-03B1 .. P1-03B2A-REVERIFY] — 2026-11-15 .. 2026-11-16
+**Mục tiêu:** Kiểm tra read-only môi trường TiDB Cloud Serverless v8.5.3, chuyển target về database `test` trống, và xác minh tách tài khoản least-privilege (`3rtMqHg6yoxMH5d.mimora_runtime` & `3rtMqHg6yoxMH5d.mimora_migrator`).
+
+- **Bằng chứng xác minh đã ghi nhận:**
+  - `P1-03B1`: Xác nhận TiDB `8.0.11-TiDB-v8.5.3-serverless`, `tidb_enable_foreign_key = ON`, `tidb_enable_check_constraint = OFF`, `tidb_enable_clustered_index = ON`, `default_collation_for_utf8mb4 = utf8mb4_bin`, `utf8mb4_0900_ai_ci` (`Compiled: Yes` và biểu thức runtime `ci_eq=1`, `ai_eq=1`); phát hiện target ban đầu trỏ nhầm `sys`.
+  - `P1-03B1R-FIX2`: Sau khi operator cập nhật secret `TIDB_DATABASE = test`, xác nhận `SELECT DATABASE() = 'test'`, `utf8mb4` (`utf8mb4_bin`), `0` tables, `0` views.
+  - `P1-03B2A-REVERIFY`: Sau khi operator tạo 2 tài khoản và nạp Secrets, xác nhận cả `3rtMqHg6yoxMH5d.mimora_runtime` (`SELECT, INSERT, UPDATE, DELETE ON test.*`) và `3rtMqHg6yoxMH5d.mimora_migrator` (`SELECT, INSERT, UPDATE, DELETE, CREATE, REFERENCES, ALTER, INDEX ON test.*`) đều xác thực thành công qua TLSv1.2+ (`TLS_AES_128_GCM_SHA256`), `GET /api/v1/db/health` trả `HTTP 200`, `test` giữ nguyên `0` bảng / `0` views, không dùng tài khoản `.root` cho runtime.
+
+---
+
+## [P1-03A-FIX1] — 2026-11-15
+**Mục tiêu:** Hiệu chỉnh khai báo cột `users.email` trong Drizzle schema để sinh tường minh `VARCHAR(255) CHARACTER SET utf8mb4 COLLATE utf8mb4_0900_ai_ci` khớp với `project-docs/DATABASE_SCHEMA.md`, và sinh lại initial migration (không thực thi lên TiDB).
+
+- **Nội dung thay đổi:**
+  - Bổ sung `emailVarchar255` (`customType` trả về `'varchar(255) CHARACTER SET utf8mb4 COLLATE utf8mb4_0900_ai_ci'`) trong `src/server/db/schema/_shared.ts`.
+  - Cập nhật `users.email` trong `src/server/db/schema/identity.ts` từ `varchar('email', { length: 255 })` sang `emailVarchar255('email')`, giữ nguyên tính nullable và `uq_users_email`.
+  - Sinh lại initial migration `drizzle/0000_mimora_mvp_init.sql` (cùng `drizzle/meta/_journal.json`, `drizzle/meta/0000_snapshot.json`) bằng `drizzle-kit generate --name=mimora_mvp_init`. Đối chiếu `diff` xác nhận toàn bộ 21 bảng còn lại và tất cả các cột/constraints/indexes/FKs giữ nguyên không đổi.
+- **Files / modules affected:**
+  - `src/server/db/schema/_shared.ts`, `src/server/db/schema/identity.ts`
+  - `drizzle/0000_mimora_mvp_init.sql`, `drizzle/meta/_journal.json`, `drizzle/meta/0000_snapshot.json`
+  - `project-docs/{CHANGELOG,KNOWN_ISSUES,PROJECT_STATE}.md`
+- **Phạm vi tuân thủ:** Không kết nối TiDB, không thực thi SQL/migration/seed, không sửa `DATABASE_SCHEMA.md`.
+- **Tests:** `tsc --noEmit`, `npx tsx --test src/server/db/schema.test.ts`, `npx drizzle-kit check`, `vite build`.
+- **Trạng thái chấp nhận:** Chờ Technical Lead review trước khi sang `P1-03B`.
+
+---
+
+## [P1-03A] — 2026-11-15
+**Mục tiêu:** Triển khai mã nguồn Drizzle ORM schema (`drizzle-orm/mysql-core`) cho toàn bộ 22 bảng theo `project-docs/DATABASE_SCHEMA.md` (`P1-02R-FIX1`), cấu hình `drizzle.config.ts`, và sinh SQL migration để review (**không thực thi lên TiDB**).
+
+- **Nội dung thay đổi:**
+  - Cài đặt devDependency `drizzle-kit@^0.31.11` và tạo `drizzle.config.ts` (`dialect: 'mysql'`, `out: './drizzle'`, `ssl: { rejectUnauthorized: true }`, không hardcode credentials).
+  - Tạo `src/server/db/uuid.ts` (`generateUuidV7()` chuẩn RFC 9562 lowercase 36-char bằng `node:crypto` `randomBytes`).
+  - Tạo bộ module schema 22 bảng dưới `src/server/db/schema/`:
+    - `_shared.ts`: `customType` chuẩn hóa `uuidChar36` (`char(36) CHARACTER SET ascii COLLATE ascii_bin`), `asciiChar64`, `asciiVarchar64` và canonical constants.
+    - `identity.ts` (4 bảng), `classes.ts` (6 bảng), `content.ts` (3 bảng), `assignments.ts` (6 bảng), `observations.ts` (1 bảng), `insights.ts` (1 bảng), `audit.ts` (1 bảng), `index.ts`.
+  - Sinh migration `drizzle/0000_mimora_mvp_init.sql` (cùng `drizzle/meta/_journal.json`, `drizzle/meta/0000_snapshot.json`) qua `npx drizzle-kit generate --name=mimora_mvp_init`.
+  - Kiểm tra chi tiết 438 dòng SQL sinh ra: toàn bộ 22 `CREATE TABLE` xuất hiện trước toàn bộ 51 `ALTER TABLE ... ADD CONSTRAINT ... FOREIGN KEY` (tự động giải quyết circular FK `content_items <-> content_versions` qua `ALTER TABLE`), giữ đủ 29 composite FKs (kể cả `fk_attempts_target`, `fk_attempts_item`, `fk_progress_active_attempt`, `fk_progress_completed_attempt`, `fk_content_items_pub_version`, `fk_sessions_active_org_membership`, `fk_obs_attempt_student`, `fk_obs_attempt_assignment`), 30 `CREATE INDEX` tường minh và 3 virtual generated column unique guards.
+  - Tạo unit tests offline `src/server/db/schema.test.ts` (3/3 tests PASS).
+- **Files / modules affected:**
+  - `package.json`, `bun.lock` (cài `drizzle-kit`)
+  - `drizzle.config.ts` (tạo mới)
+  - `src/server/db/uuid.ts`, `src/server/db/schema.test.ts` (tạo mới)
+  - `src/server/db/schema/{_shared,identity,classes,content,assignments,observations,insights,audit,index}.ts` (tạo mới)
+  - `drizzle/0000_mimora_mvp_init.sql`, `drizzle/meta/_journal.json`, `drizzle/meta/0000_snapshot.json` (sinh tự động, chưa thực thi)
+  - `project-docs/{PROJECT_STATE,CHANGELOG,KNOWN_ISSUES,ARCHITECTURE}.md` (cập nhật)
+- **Phạm vi tuân thủ:** Tuyệt đối không chạy `drizzle-kit migrate` / `push`, không kết nối TiDB thực thi DDL/DML/seed, không thay đổi thiết kế trong `DATABASE_SCHEMA.md`, không sửa PoC hiện có (`server.ts`, `tidb.ts`, `App.tsx`).
+- **Tests:** `tsc --noEmit`, `vite build`, `npx drizzle-kit check`, `npx tsx --test src/server/db/schema.test.ts`, kiểm tra `dist/` không chứa `src/server/db/*` hoặc secrets.
+- **Trạng thái chấp nhận:** Đang chờ Technical Lead review trước khi sang `P1-03B`.
+
+---
+
+## [P1-02R-FIX1] — 2026-11-15
+**Mục tiêu:** Hoàn thiện tính toàn vẹn dữ liệu chéo giữa `teacher_observations`, `assignments` và `activity_attempts` (chỉ cập nhật tài liệu đặc tả, chưa tạo code Drizzle hay thay đổi TiDB).
+
+- **Nội dung thay đổi:**
+  - Chọn **Ưu tiên A kết hợp Transactional Service Validation**:
+    - Trên `activity_attempts`: bổ sung `UNIQUE KEY uq_attempts_org_assign_student_id (organization_id, assignment_id, student_membership_id, id)` (giữ nguyên `uq_attempts_org_student_id`).
+    - Trên `teacher_observations`: thay `fk_obs_attempt` bằng `fk_obs_attempt_student (organization_id, student_membership_id, attempt_id) -> activity_attempts(organization_id, student_membership_id, id)` và bổ sung `fk_obs_attempt_assignment (organization_id, assignment_id, student_membership_id, attempt_id) -> activity_attempts(organization_id, assignment_id, student_membership_id, id)`.
+    - Phân tách trung thực DB-enforced vs Service-enforced dưới ngữ nghĩa TiDB `MATCH SIMPLE`: khi `assignment_id` & `attempt_id` đều non-null, DB chặn hoàn toàn lệch assignment; ở tầng service transaction, khi có `attempt_id` bắt buộc truy vấn `activity_attempts` + `assignments` và ép/xác minh `assignment_id = attempt.assignment_id` và `class_id = assignment.class_id` (không cho phép `attempt_id != NULL` với `assignment_id = NULL` hoặc lệch `class_id`), kiểm tra `class_teachers` + `class_enrollments`, và giữ nguyên author-only isolation.
+    - Bổ sung 4 test cases `T-OBS-01..04` vào `DATABASE_SCHEMA.md` (Mục 3.20 & Mục 11).
+- **Files / modules affected:**
+  - `project-docs/DATABASE_SCHEMA.md` (cập nhật)
+  - `project-docs/PROJECT_STATE.md` (cập nhật)
+  - `project-docs/CHANGELOG.md` (cập nhật)
+  - `project-docs/KNOWN_ISSUES.md` (không phát sinh issue mới, giữ nguyên)
+  - `project-docs/ARCHITECTURE.md` (không đổi quyết định kiến trúc, giữ nguyên)
+- **Phạm vi tuân thủ:** Không tạo code Drizzle, không cài package, không generate/run migration, không thực thi SQL hay thay đổi TiDB.
+- **Tests:** Kiểm tra tính nhất quán tài liệu, `git status` và `git diff`.
+- **Trạng thái chấp nhận:** Đang chờ Technical Lead review.
+
+---
+
+## [P1-02R] — 2026-11-15
+**Mục tiêu:** Hiệu chỉnh đặc tả thiết kế database schema (`P1-02`) dựa trên kết quả architecture review (chỉ cập nhật tài liệu thiết kế, chưa tạo code Drizzle hay migrate TiDB).
+
+- **Nội dung thay đổi:**
+  - **Cross-entity integrity (`2A`):** Bổ sung `assignment_id` vào `activity_attempts`, các composite unique keys trên `assignment_targets` / `assignment_items` / `activity_attempts`, và composite FKs đảm bảo đồng bộ `(organization_id, assignment_id, student_membership_id, content_version_id)` cho `activity_attempts` và `(organization_id, assignment_target_id, student_membership_id, active_attempt_id / latest_completed_attempt_id)` cho `assignment_progress`; phân tách rõ DB-enforced vs transactional service-enforced.
+  - **Content version ownership (`2B`):** Bổ sung `uq_content_versions_item_id (content_item_id, id)` trên `content_versions` và composite FK `(id, current_published_version_id) -> content_versions(content_item_id, id)` trên `content_items`, kèm thứ tự DDL migration.
+  - **Session membership (`2C`):** Dùng composite FK `(active_organization_id, user_id) -> organization_memberships(organization_id, user_id)` trên `sessions`, bảo toàn `active_organization_id = NULL` (`MATCH SIMPLE`) cho `platform_admin` / `teacher` chọn org, kết hợp service check trạng thái active.
+  - **Concurrent learning attempts (`2D`):** Thiết kế khóa giao dịch `SELECT ... FOR UPDATE` trên `assignment_targets` + `start_idempotency_key` + `uq_attempts_number` + `uq_attempts_single_in_progress` (virtual generated guard) và danh sách integration tests `T-CONC-01..03`.
+  - **Content approval history (`2E`):** Làm rõ 1 bản ghi `content_approvals` = 1 `submission_round`, bảo toàn lịch sử bị `rejected` khi gửi lại, khóa `FOR UPDATE` chống duyệt đồng thời, so sánh `reviewer_user_id` với `content_versions.created_by_user_id`, và audit `content.self_approved` khi chỉ có 1 Admin active.
+  - **Aggregate privacy (`2F`):** Mở rộng `org_insight_daily_snapshots` hỗ trợ `period_type` (`daily | weekly | monthly`) và `content_type = 'all'`, bổ sung chính sách ngưỡng cohort `k = 5` (`[ASSUMPTION]`), ẩn đồng nhất `< 5`, gộp chu kỳ/nhóm và allowlist bộ lọc chống suy diễn sai phân.
+  - **Bổ sung hiệu chỉnh (`Mục 3` & `Mục 4`):** Chuẩn hóa UUID `CHAR(36) CHARACTER SET ascii COLLATE ascii_bin`; sửa đếm phạm vi bảng (`15` tenant `NOT NULL` + `2` nullable + `5` global/root); tách rõ explicit indexes vs auto-created FK indexes; làm rõ `teacher_observations`, `assignment_progress` retry semantics, `abandoned` chỉ theo thao tác chủ động, `audit_logs` allowlist, `csv_import_jobs` uploader authorization, `class_enrollments` re-enrollment history, chuẩn hóa login identifier (cấm `@` trong `platform_username`), quan hệ `status`/`failed_login_attempts`/`locked_until`, và sửa phân tích TiDB Clustered vs Non-Clustered PK (`SHARD_ROW_ID_BITS` không áp dụng cho Clustered PK).
+- **Files / modules affected:**
+  - `project-docs/DATABASE_SCHEMA.md` (cập nhật toàn diện)
+  - `project-docs/PROJECT_STATE.md` (cập nhật)
+  - `project-docs/KNOWN_ISSUES.md` (cập nhật `KI-06`, `KI-09`, `KI-10`)
+  - `project-docs/CHANGELOG.md` (cập nhật)
+  - `project-docs/ARCHITECTURE.md` (giữ nguyên vì không thay đổi quyết định kiến trúc đã phê duyệt)
+- **Phạm vi tuân thủ:** Không tạo code Drizzle, không cài package, không generate/run migration, không thực thi SQL hay thay đổi TiDB.
+- **Tests:** Kiểm tra tính nhất quán tài liệu, `git status` và `git diff`.
+- **Trạng thái chấp nhận:** Đang chờ Technical Lead review.
+
+---
+
+## [P1-02] — 2026-11-15
+**Mục tiêu:** Thiết kế đặc tả database schema hoàn chỉnh và ràng buộc toàn vẹn dữ liệu cho MVP MIMORA (TiDB Cloud Serverless v8.5.3 + Drizzle ORM + UUIDv7, chưa triển khai code/migration).
+
+- **Nội dung thay đổi:**
+  - Tạo mới `project-docs/DATABASE_SCHEMA.md` đặc tả **22 bảng** qua 7 nhóm dữ liệu (`Identity & Organization`, `Classes & Student Management`, `Content Management`, `Assignments & Learning Sessions`, `Teacher Observations`, `Progress & Insights`, `Audit & Operational Events`), kèm Mermaid ERD, PK/FK/Unique/Index, chiến lược multi-tenant composite FK, ma trận phân quyền, workflow versioning/approval (không cho tự duyệt nếu >= 2 Admin active), mô hình `activity_attempts` (source of truth) vs `assignment_progress` (dẫn xuất), và kế hoạch migration cho P1-03+.
+  - Đối chiếu tài liệu chính thức TiDB v8.5 (`docs.pingcap.com`): phát hiện `tidb_enable_check_constraint` mặc định `OFF` (`KI-09`), xác minh hỗ trợ GA của composite FK, phân tích circular FK giữa `content_items` và `content_versions`, và đánh giá TiKV sequential write hotspot của `UUIDv7` clustered PK (`KI-10`).
+  - Đồng bộ hóa `project-docs/ARCHITECTURE.md`, `project-docs/PROJECT_STATE.md`, `project-docs/KNOWN_ISSUES.md` theo các quyết định PO đã phê duyệt (bỏ `org_admin` khỏi mô hình MVP, khóa đúng 5 canonical `content_type`, cô lập `teacher_observations` chỉ cho tác giả, giới hạn Admin chỉ xem aggregate insights).
+- **Files / modules affected:**
+  - `project-docs/DATABASE_SCHEMA.md` (tạo mới)
+  - `project-docs/ARCHITECTURE.md` (cập nhật)
+  - `project-docs/PROJECT_STATE.md` (cập nhật)
+  - `project-docs/KNOWN_ISSUES.md` (cập nhật)
+  - `project-docs/CHANGELOG.md` (cập nhật)
+- **Phạm vi tuân thủ:** Không tạo bảng trên TiDB, không chạy migration/seed, không sửa source code (`server.ts`, `src/*`, `package.json`), không cài dependency, không push Git remote.
+- **Tests:** Kiểm tra tính nhất quán tài liệu, `git status` và `git diff`.
+- **Trạng thái chấp nhận:** Đang chờ Technical Lead review.
+
+---
+
+## [P1-01-FIX] — 2026-11-15 (cập nhật lúc 08:55 PST / 16:55 UTC)
+**Mục tiêu:** Đồng bộ trạng thái P0-01B và các tài liệu `project-docs/` theo kết quả kiểm thử trình duyệt mới nhất trong AI Studio Preview.
+
+- **Nội dung thay đổi:**
+  - Cập nhật trạng thái `P0-01B` từ trạng thái chờ kiểm thử trình duyệt sang `PASS` trên `PROJECT_STATE.md`, `CHANGELOG.md`, `KNOWN_ISSUES.md` và bổ sung ghi chú xác minh thực tế vào `ARCHITECTURE.md`.
+  - Đóng `KI-01` trong `KNOWN_ISSUES.md` kèm bằng chứng kiểm thử trình duyệt Preview.
+  - Giữ nguyên `KI-02` ở trạng thái `OPEN`, giữ nguyên cấu hình `Secure` cookie và `trust proxy` trong code, không suy diễn kết quả sang môi trường HTTPS/proxy production.
+- **Files / modules affected:**
+  - `project-docs/PROJECT_STATE.md` (cập nhật)
+  - `project-docs/CHANGELOG.md` (cập nhật)
+  - `project-docs/KNOWN_ISSUES.md` (cập nhật)
+  - `project-docs/ARCHITECTURE.md` (cập nhật)
+- **Bằng chứng kiểm thử mới (trình duyệt AI Studio Preview, ghi nhận 2026-11-15):**
+  - `Set cookie: SUCCESS`
+  - `Check cookie: RECEIVED`
+  - `Clear cookie: SUCCESS`
+  - `Proxy check: req.secure: false, req.protocol: http, X-Forwarded-Proto: http`
+- **Tests:** Chỉ kiểm tra tính nhất quán tài liệu và `git diff` (không sửa source code).
+- **Trạng thái chấp nhận:** Đang chờ Technical Lead đánh giá.
+
+---
+
+## [P1-01] — 2026-11-15
+**Mục tiêu:** Thiết lập nền móng Git và bộ tài liệu dự án `project-docs/`.
+
+- **Nội dung thay đổi:**
+  - Khởi tạo Git repository cục bộ tại workspace với initial commit `chore: initialize MIMORA project foundation` (không tạo remote, không push).
+  - Xác minh `.gitignore` loại trừ `.env*` (giữ `!.env.example`), `node_modules/`, `dist/`, `build/`, `coverage/`, `*.log`.
+  - Tạo bộ tài liệu chuẩn hóa: `project-docs/PROJECT_STATE.md`, `project-docs/CHANGELOG.md`, `project-docs/ARCHITECTURE.md`, `project-docs/KNOWN_ISSUES.md`.
+- **Files / modules affected:**
+  - `.git/` (khởi tạo mới)
+  - `project-docs/PROJECT_STATE.md` (tạo mới)
+  - `project-docs/CHANGELOG.md` (tạo mới)
+  - `project-docs/ARCHITECTURE.md` (tạo mới)
+  - `project-docs/KNOWN_ISSUES.md` (tạo mới)
+- **Tests:**
+  - `git status`, kiểm tra staged files không chứa secret: PASS.
+  - `tsc --noEmit` và `vite build`: PASS.
+- **Trạng thái chấp nhận:** Đang chờ Technical Lead đánh giá.
+
+---
+
+## [P0-02A] — 2026-11-15
+**Mục tiêu:** Đánh giá và lựa chọn kiến trúc authentication cho MIMORA.
+
+- **Nội dung thay đổi:**
+  - Kiểm chứng API và metadata gói `better-auth@1.7.25` cùng tài liệu chính thức `better-auth.com`: xác nhận Better Auth yêu cầu `user.email` `NOT NULL UNIQUE` ở lõi và `username` plugin mặc định global unique, không đáp ứng tự nhiên yêu cầu Student không có email và username unique theo organization.
+  - Đề xuất **Option B — Custom Authentication** dựa trên Express + Drizzle + TiDB + `scrypt` (`src/server/security/password-hash.ts`) + server-side sessions (`HttpOnly` cookie, SHA-256 `token_hash`).
+  - Thiết kế mô hình multi-tenant (`organizations`, `users`, `organization_memberships`) và giải pháp cookie/proxy trust boundary.
+- **Files / modules affected:** Không sửa mã nguồn (task nghiên cứu & đánh giá kiến trúc).
+- **Tests:** Đối chiếu npm metadata (`npm view better-auth`) và tài liệu chính thức; không chạy migration.
+- **Trạng thái chấp nhận:** Đã hoàn thành báo cáo đánh giá và được tiếp nối sang Phase 1.
+
+---
+
+## [P0-01D] — 2026-11-15
+**Mục tiêu:** Kiểm chứng tính khả thi thuật toán password hashing (Argon2id vs `scrypt`).
+
+- **Nội dung thay đổi:**
+  - Xác minh Node.js `v22.23.2` không có `crypto.argon2` native (`undefined`) và container thiếu toolchain C/C++/Rust (`gcc`, `g++`, `make`, `cmake`, `cargo` đều missing). Không cài addon native bên thứ ba để tránh rủi ro build.
+  - Triển khai module hashing bất đồng bộ bằng `node:crypto` `scrypt` với định dạng tự mô tả `scrypt$v1$N=65536,r=8,p=2,dkLen=32$<salt>$<hash>`, salt 16 bytes `randomBytes`, so sánh bằng `crypto.timingSafeEqual`, kiểm tra định dạng chặt chẽ và hàm `needsRehash`.
+  - Viết 9 unit tests bằng `node:test` và `node:assert/strict`.
+- **Files / modules affected:**
+  - `src/server/security/password-hash.ts` (tạo mới)
+  - `src/server/security/password-hash.test.ts` (tạo mới)
+- **Tests:**
+  - `npx tsx --test src/server/security/password-hash.test.ts`: 9/9 tests PASS (T1–T8 + `needsRehash`).
+  - Đo hiệu năng tuần tự 7 lượt (`N=65536, r=8, p=2, dkLen=32`): hash median `408.15 ms` (`397.65–439.60 ms`), verify median `422.30 ms` (`396.42–480.69 ms`).
+  - `tsc --noEmit` và `vite build`: PASS; `password-hash` không lọt vào `dist/`.
+- **Trạng thái chấp nhận:** Đã chấp nhận hướng `scrypt`.
+
+---
+
+## [P0-01C] — 2026-11-15
+**Mục tiêu:** Xác minh kết nối TiDB Cloud qua `mysql2` + `drizzle-orm` + TLS.
+
+- **Nội dung thay đổi:**
+  - Cài đặt `drizzle-orm` (`^0.45.4`) và `mysql2` (`^3.24.6`).
+  - Tạo module kết nối TiDB singleton với `connectionLimit: 5`, bắt buộc `ssl: { minVersion: 'TLSv1.2', rejectUnauthorized: true }`, kiểm tra biến `TIDB_*` và làm sạch lỗi (`sanitizeDbError`).
+  - Thêm endpoint `GET /api/v1/db/health` (chỉ nhận GET, 405 cho method khác) thực thi `SELECT 1 AS ok, VERSION() AS serverVersion`. Phát hiện `nginx` nội bộ chặn `502`/`503`/`504` bằng `warmup.html`, nên trả HTTP `500` cho lỗi DB JSON.
+  - Bổ sung khu vực **TiDB Connectivity Proof** với nút `Test Database Connection` trong `src/App.tsx`.
+- **Files / modules affected:**
+  - `package.json`, `bun.lock` (cập nhật dependencies)
+  - `.env.example` (thêm tên biến placeholder `TIDB_*`)
+  - `src/server/db/tidb.ts` (tạo mới)
+  - `server.ts` (thêm `/api/v1/db/health` và `closeTiDbPool()` khi shutdown)
+  - `src/App.tsx` (thêm UI kiểm tra DB)
+- **Tests:**
+  - `tsc --noEmit` và `vite build`: PASS; không có credentials hay driver DB trong `dist/`.
+  - Kiểm thử thiếu credentials (`DB_CONFIG_MISSING` qua `nginx:8080` HTTP `500`) và mô phỏng sai credentials (`DB_CONNECTION_ERROR`, `DB_AUTH_FAILED`): PASS.
+  - Kiểm thử kết nối TiDB thật sau khi người vận hành nạp Secrets: `GET /api/v1/db/health` trả `{"status":"ok","database":"connected","orm":"drizzle","driver":"mysql2","tls":"required-min-v1.2-verified","latencyMs":73,"serverVersion":"8.0.11-TiDB-v8.5.3-serverless"}`: PASS.
+- **Trạng thái chấp nhận:** Đã kết nối TiDB Cloud thành công.
+
+---
+
+## [P0-01B] — 2026-11-15
+**Mục tiêu:** Kiểm chứng cơ chế gửi/nhận `HttpOnly; Secure; SameSite=None` cookie qua reverse proxy và preview iframe.
+
+- **Nội dung thay đổi:**
+  - Bật `app.set('trust proxy', 1)` trong `server.ts`.
+  - Tạo 3 endpoint `POST /api/v1/cookie-test/set` (`Max-Age=600`, `Path=/`, `HttpOnly`, `Secure`, `SameSite=None`), `GET /api/v1/cookie-test/check`, `POST /api/v1/cookie-test/clear` kèm chặn method sai (`405`).
+  - Phát hiện `/etc/nginx/nginx.conf` có `proxy_set_header X-Forwarded-Proto $scheme;`, làm Express luôn nhận `req.secure = false` và `req.protocol = 'http'` dù truy cập qua HTTPS.
+  - Thêm giao diện kiểm thử cookie vào `src/App.tsx`.
+- **Files / modules affected:**
+  - `server.ts` (chỉnh sửa)
+  - `src/App.tsx` (chỉnh sửa)
+- **Tests:**
+  - Kiểm thử HTTP qua `nginx:8080` bằng `curl` (2026-11-15): PASS (`Set-Cookie` đúng thuộc tính `HttpOnly; Secure; SameSite=None; Path=/; Max-Age=600`, `405` đúng method, không lộ giá trị cookie).
+  - Kiểm thử trực tiếp trên trình duyệt trong AI Studio Preview (cập nhật 2026-11-15): **PASS** (`Set cookie: SUCCESS`, `Check cookie: RECEIVED`, `Clear cookie: SUCCESS`; `Proxy check: req.secure: false, req.protocol: http, X-Forwarded-Proto: http`).
+- **Trạng thái chấp nhận:** **PASS** (đã xác minh cả phía server/proxy lẫn trình duyệt trong môi trường Preview; hành vi HTTPS/proxy ở production vẫn chưa xác minh).
+
+---
+
+## [P0-01A] — 2026-11-15
+**Mục tiêu:** Chứng minh Express và Vite chạy trong cùng một tiến trình Node.js, cùng origin trên cổng `3000`.
+
+- **Nội dung thay đổi:**
+  - Tạo `/server.ts` lắng nghe `0.0.0.0:3000`, parse tham số `--port`/`--host` do `control-plane-api` truyền vào, đăng ký `GET /api/v1/health` trước Vite `middlewareMode`.
+  - Đổi script `"dev"` trong `package.json` sang `"tsx server.ts"`.
+  - Cập nhật `src/App.tsx` hiển thị `MIMORA Runtime Proof` và gọi `fetch('/api/v1/health')`.
+- **Files / modules affected:**
+  - `server.ts` (tạo mới)
+  - `package.json` (chỉnh sửa script `dev`)
+  - `src/App.tsx` (chỉnh sửa)
+- **Tests:**
+  - `restart_dev_server`, `ss -tln` trên `0.0.0.0:3000`, `curl` qua `3000` và `nginx:8080` (`/api/v1/health`, `/`, `/src/App.tsx`), kiểm tra ổn định PID, `tsc --noEmit`, `vite build`: PASS.
+- **Trạng thái chấp nhận:** Đã chấp nhận.
+
+---
+
+## [P0-00] — 2026-11-15
+**Mục tiêu:** Kiểm tra workspace và môi trường thực thi Google AI Studio Build Mode.
+
+- **Nội dung thay đổi:** Chỉ kiểm tra đọc, không chỉnh sửa workspace. Ghi nhận Node `v22.23.2`, `npm 10.9.8`, `bun 1.4.4`, `Debian 12`, `gVisor`, thiếu `gcc`/`g++`/`make`, chưa có Git repo, `control-plane-api` chạy cổng `3000` sau `nginx:8080`.
+- **Files / modules affected:** Không có.
+- **Tests:** Kiểm kê filesystem, toolchain, npm registry, `tsc --noEmit`: Hoàn tất.
+- **Trạng thái chấp nhận:** Đã chấp nhận làm đầu vào cho toàn bộ Phase 0.

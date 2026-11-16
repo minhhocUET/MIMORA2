@@ -1,0 +1,3400 @@
+{
+  "version": "5",
+  "dialect": "mysql",
+  "id": "5a557b27-0869-4202-aef7-5135fdb6f4fa",
+  "prevId": "00000000-0000-0000-0000-000000000000",
+  "tables": {
+    "organization_memberships": {
+      "name": "organization_memberships",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "char(36) CHARACTER SET ascii COLLATE ascii_bin",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "organization_id": {
+          "name": "organization_id",
+          "type": "char(36) CHARACTER SET ascii COLLATE ascii_bin",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "user_id": {
+          "name": "user_id",
+          "type": "char(36) CHARACTER SET ascii COLLATE ascii_bin",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "role": {
+          "name": "role",
+          "type": "varchar(32)",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "org_username": {
+          "name": "org_username",
+          "type": "varchar(64) CHARACTER SET ascii COLLATE ascii_bin",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "status": {
+          "name": "status",
+          "type": "varchar(32)",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": "'active'"
+        },
+        "created_by_user_id": {
+          "name": "created_by_user_id",
+          "type": "char(36) CHARACTER SET ascii COLLATE ascii_bin",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "datetime(3)",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "datetime(3)",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        }
+      },
+      "indexes": {
+        "idx_org_memberships_user": {
+          "name": "idx_org_memberships_user",
+          "columns": [
+            "user_id",
+            "status"
+          ],
+          "isUnique": false
+        },
+        "idx_org_memberships_org_role": {
+          "name": "idx_org_memberships_org_role",
+          "columns": [
+            "organization_id",
+            "role",
+            "status"
+          ],
+          "isUnique": false
+        }
+      },
+      "foreignKeys": {
+        "fk_org_memberships_org": {
+          "name": "fk_org_memberships_org",
+          "tableFrom": "organization_memberships",
+          "tableTo": "organizations",
+          "columnsFrom": [
+            "organization_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        },
+        "fk_org_memberships_user": {
+          "name": "fk_org_memberships_user",
+          "tableFrom": "organization_memberships",
+          "tableTo": "users",
+          "columnsFrom": [
+            "user_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        },
+        "fk_org_memberships_creator": {
+          "name": "fk_org_memberships_creator",
+          "tableFrom": "organization_memberships",
+          "tableTo": "users",
+          "columnsFrom": [
+            "created_by_user_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {
+        "organization_memberships_id": {
+          "name": "organization_memberships_id",
+          "columns": [
+            "id"
+          ]
+        }
+      },
+      "uniqueConstraints": {
+        "uq_org_memberships_org_id": {
+          "name": "uq_org_memberships_org_id",
+          "columns": [
+            "organization_id",
+            "id"
+          ]
+        },
+        "uq_org_memberships_org_user": {
+          "name": "uq_org_memberships_org_user",
+          "columns": [
+            "organization_id",
+            "user_id"
+          ]
+        },
+        "uq_org_memberships_org_username": {
+          "name": "uq_org_memberships_org_username",
+          "columns": [
+            "organization_id",
+            "org_username"
+          ]
+        }
+      },
+      "checkConstraint": {}
+    },
+    "organizations": {
+      "name": "organizations",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "char(36) CHARACTER SET ascii COLLATE ascii_bin",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "code": {
+          "name": "code",
+          "type": "varchar(64) CHARACTER SET ascii COLLATE ascii_bin",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "name": {
+          "name": "name",
+          "type": "varchar(255)",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "status": {
+          "name": "status",
+          "type": "varchar(32)",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": "'active'"
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "datetime(3)",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "datetime(3)",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        }
+      },
+      "indexes": {
+        "idx_organizations_status": {
+          "name": "idx_organizations_status",
+          "columns": [
+            "status"
+          ],
+          "isUnique": false
+        }
+      },
+      "foreignKeys": {},
+      "compositePrimaryKeys": {
+        "organizations_id": {
+          "name": "organizations_id",
+          "columns": [
+            "id"
+          ]
+        }
+      },
+      "uniqueConstraints": {
+        "uq_organizations_code": {
+          "name": "uq_organizations_code",
+          "columns": [
+            "code"
+          ]
+        }
+      },
+      "checkConstraint": {}
+    },
+    "sessions": {
+      "name": "sessions",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "char(36) CHARACTER SET ascii COLLATE ascii_bin",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "token_hash": {
+          "name": "token_hash",
+          "type": "char(64) CHARACTER SET ascii COLLATE ascii_bin",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "user_id": {
+          "name": "user_id",
+          "type": "char(36) CHARACTER SET ascii COLLATE ascii_bin",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "session_scope": {
+          "name": "session_scope",
+          "type": "varchar(32)",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "active_organization_id": {
+          "name": "active_organization_id",
+          "type": "char(36) CHARACTER SET ascii COLLATE ascii_bin",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "idle_expires_at": {
+          "name": "idle_expires_at",
+          "type": "datetime(3)",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "absolute_expires_at": {
+          "name": "absolute_expires_at",
+          "type": "datetime(3)",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "last_activity_at": {
+          "name": "last_activity_at",
+          "type": "datetime(3)",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "revoked_at": {
+          "name": "revoked_at",
+          "type": "datetime(3)",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "revoked_reason": {
+          "name": "revoked_reason",
+          "type": "varchar(64)",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "ip_prefix": {
+          "name": "ip_prefix",
+          "type": "varchar(64)",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "user_agent_hash": {
+          "name": "user_agent_hash",
+          "type": "char(64) CHARACTER SET ascii COLLATE ascii_bin",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "datetime(3)",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        }
+      },
+      "indexes": {
+        "idx_sessions_user_active": {
+          "name": "idx_sessions_user_active",
+          "columns": [
+            "user_id",
+            "revoked_at",
+            "absolute_expires_at"
+          ],
+          "isUnique": false
+        },
+        "idx_sessions_cleanup": {
+          "name": "idx_sessions_cleanup",
+          "columns": [
+            "absolute_expires_at"
+          ],
+          "isUnique": false
+        }
+      },
+      "foreignKeys": {
+        "fk_sessions_user": {
+          "name": "fk_sessions_user",
+          "tableFrom": "sessions",
+          "tableTo": "users",
+          "columnsFrom": [
+            "user_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        },
+        "fk_sessions_active_org_membership": {
+          "name": "fk_sessions_active_org_membership",
+          "tableFrom": "sessions",
+          "tableTo": "organization_memberships",
+          "columnsFrom": [
+            "active_organization_id",
+            "user_id"
+          ],
+          "columnsTo": [
+            "organization_id",
+            "user_id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {
+        "sessions_id": {
+          "name": "sessions_id",
+          "columns": [
+            "id"
+          ]
+        }
+      },
+      "uniqueConstraints": {
+        "uq_sessions_token_hash": {
+          "name": "uq_sessions_token_hash",
+          "columns": [
+            "token_hash"
+          ]
+        }
+      },
+      "checkConstraint": {}
+    },
+    "users": {
+      "name": "users",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "char(36) CHARACTER SET ascii COLLATE ascii_bin",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "email": {
+          "name": "email",
+          "type": "varchar(255) CHARACTER SET utf8mb4 COLLATE utf8mb4_0900_ai_ci",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "platform_username": {
+          "name": "platform_username",
+          "type": "varchar(64) CHARACTER SET ascii COLLATE ascii_bin",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "platform_role": {
+          "name": "platform_role",
+          "type": "varchar(32)",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "display_name": {
+          "name": "display_name",
+          "type": "varchar(255)",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "password_hash": {
+          "name": "password_hash",
+          "type": "varchar(255)",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "password_updated_at": {
+          "name": "password_updated_at",
+          "type": "datetime(3)",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "status": {
+          "name": "status",
+          "type": "varchar(32)",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": "'active'"
+        },
+        "failed_login_attempts": {
+          "name": "failed_login_attempts",
+          "type": "int",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": 0
+        },
+        "locked_until": {
+          "name": "locked_until",
+          "type": "datetime(3)",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "last_login_at": {
+          "name": "last_login_at",
+          "type": "datetime(3)",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "datetime(3)",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "datetime(3)",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        }
+      },
+      "indexes": {
+        "idx_users_status": {
+          "name": "idx_users_status",
+          "columns": [
+            "status"
+          ],
+          "isUnique": false
+        },
+        "idx_users_platform_role": {
+          "name": "idx_users_platform_role",
+          "columns": [
+            "platform_role"
+          ],
+          "isUnique": false
+        }
+      },
+      "foreignKeys": {},
+      "compositePrimaryKeys": {
+        "users_id": {
+          "name": "users_id",
+          "columns": [
+            "id"
+          ]
+        }
+      },
+      "uniqueConstraints": {
+        "uq_users_email": {
+          "name": "uq_users_email",
+          "columns": [
+            "email"
+          ]
+        },
+        "uq_users_platform_username": {
+          "name": "uq_users_platform_username",
+          "columns": [
+            "platform_username"
+          ]
+        }
+      },
+      "checkConstraint": {}
+    },
+    "class_enrollments": {
+      "name": "class_enrollments",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "char(36) CHARACTER SET ascii COLLATE ascii_bin",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "organization_id": {
+          "name": "organization_id",
+          "type": "char(36) CHARACTER SET ascii COLLATE ascii_bin",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "class_id": {
+          "name": "class_id",
+          "type": "char(36) CHARACTER SET ascii COLLATE ascii_bin",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "student_membership_id": {
+          "name": "student_membership_id",
+          "type": "char(36) CHARACTER SET ascii COLLATE ascii_bin",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "status": {
+          "name": "status",
+          "type": "varchar(32)",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": "'active'"
+        },
+        "enrolled_at": {
+          "name": "enrolled_at",
+          "type": "datetime(3)",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "ended_at": {
+          "name": "ended_at",
+          "type": "datetime(3)",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "updated_by_user_id": {
+          "name": "updated_by_user_id",
+          "type": "char(36) CHARACTER SET ascii COLLATE ascii_bin",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "active_class_guard": {
+          "name": "active_class_guard",
+          "type": "char(36) CHARACTER SET ascii COLLATE ascii_bin",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false,
+          "generated": {
+            "as": "CASE WHEN status = 'active' THEN class_id ELSE NULL END",
+            "type": "virtual"
+          }
+        },
+        "active_student_guard": {
+          "name": "active_student_guard",
+          "type": "char(36) CHARACTER SET ascii COLLATE ascii_bin",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false,
+          "generated": {
+            "as": "CASE WHEN status = 'active' THEN student_membership_id ELSE NULL END",
+            "type": "virtual"
+          }
+        }
+      },
+      "indexes": {
+        "idx_enrollments_student": {
+          "name": "idx_enrollments_student",
+          "columns": [
+            "organization_id",
+            "student_membership_id",
+            "status"
+          ],
+          "isUnique": false
+        },
+        "idx_enrollments_class_status": {
+          "name": "idx_enrollments_class_status",
+          "columns": [
+            "organization_id",
+            "class_id",
+            "status"
+          ],
+          "isUnique": false
+        }
+      },
+      "foreignKeys": {
+        "fk_enrollments_class": {
+          "name": "fk_enrollments_class",
+          "tableFrom": "class_enrollments",
+          "tableTo": "classes",
+          "columnsFrom": [
+            "organization_id",
+            "class_id"
+          ],
+          "columnsTo": [
+            "organization_id",
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        },
+        "fk_enrollments_student": {
+          "name": "fk_enrollments_student",
+          "tableFrom": "class_enrollments",
+          "tableTo": "organization_memberships",
+          "columnsFrom": [
+            "organization_id",
+            "student_membership_id"
+          ],
+          "columnsTo": [
+            "organization_id",
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        },
+        "fk_enrollments_actor": {
+          "name": "fk_enrollments_actor",
+          "tableFrom": "class_enrollments",
+          "tableTo": "users",
+          "columnsFrom": [
+            "updated_by_user_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {
+        "class_enrollments_id": {
+          "name": "class_enrollments_id",
+          "columns": [
+            "id"
+          ]
+        }
+      },
+      "uniqueConstraints": {
+        "uq_class_enrollments_active_pair": {
+          "name": "uq_class_enrollments_active_pair",
+          "columns": [
+            "active_class_guard",
+            "active_student_guard"
+          ]
+        }
+      },
+      "checkConstraint": {}
+    },
+    "class_teachers": {
+      "name": "class_teachers",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "char(36) CHARACTER SET ascii COLLATE ascii_bin",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "organization_id": {
+          "name": "organization_id",
+          "type": "char(36) CHARACTER SET ascii COLLATE ascii_bin",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "class_id": {
+          "name": "class_id",
+          "type": "char(36) CHARACTER SET ascii COLLATE ascii_bin",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "teacher_membership_id": {
+          "name": "teacher_membership_id",
+          "type": "char(36) CHARACTER SET ascii COLLATE ascii_bin",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "assigned_by_user_id": {
+          "name": "assigned_by_user_id",
+          "type": "char(36) CHARACTER SET ascii COLLATE ascii_bin",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "datetime(3)",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        }
+      },
+      "indexes": {
+        "idx_class_teachers_member": {
+          "name": "idx_class_teachers_member",
+          "columns": [
+            "organization_id",
+            "teacher_membership_id"
+          ],
+          "isUnique": false
+        }
+      },
+      "foreignKeys": {
+        "fk_class_teachers_class": {
+          "name": "fk_class_teachers_class",
+          "tableFrom": "class_teachers",
+          "tableTo": "classes",
+          "columnsFrom": [
+            "organization_id",
+            "class_id"
+          ],
+          "columnsTo": [
+            "organization_id",
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        },
+        "fk_class_teachers_member": {
+          "name": "fk_class_teachers_member",
+          "tableFrom": "class_teachers",
+          "tableTo": "organization_memberships",
+          "columnsFrom": [
+            "organization_id",
+            "teacher_membership_id"
+          ],
+          "columnsTo": [
+            "organization_id",
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        },
+        "fk_class_teachers_assigned_by": {
+          "name": "fk_class_teachers_assigned_by",
+          "tableFrom": "class_teachers",
+          "tableTo": "users",
+          "columnsFrom": [
+            "assigned_by_user_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {
+        "class_teachers_id": {
+          "name": "class_teachers_id",
+          "columns": [
+            "id"
+          ]
+        }
+      },
+      "uniqueConstraints": {
+        "uq_class_teachers_pair": {
+          "name": "uq_class_teachers_pair",
+          "columns": [
+            "class_id",
+            "teacher_membership_id"
+          ]
+        }
+      },
+      "checkConstraint": {}
+    },
+    "classes": {
+      "name": "classes",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "char(36) CHARACTER SET ascii COLLATE ascii_bin",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "organization_id": {
+          "name": "organization_id",
+          "type": "char(36) CHARACTER SET ascii COLLATE ascii_bin",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "name": {
+          "name": "name",
+          "type": "varchar(255)",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "academic_year": {
+          "name": "academic_year",
+          "type": "varchar(32)",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "status": {
+          "name": "status",
+          "type": "varchar(32)",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": "'active'"
+        },
+        "created_by_user_id": {
+          "name": "created_by_user_id",
+          "type": "char(36) CHARACTER SET ascii COLLATE ascii_bin",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "datetime(3)",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "datetime(3)",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        }
+      },
+      "indexes": {
+        "idx_classes_org_status": {
+          "name": "idx_classes_org_status",
+          "columns": [
+            "organization_id",
+            "status"
+          ],
+          "isUnique": false
+        }
+      },
+      "foreignKeys": {
+        "fk_classes_org": {
+          "name": "fk_classes_org",
+          "tableFrom": "classes",
+          "tableTo": "organizations",
+          "columnsFrom": [
+            "organization_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        },
+        "fk_classes_creator": {
+          "name": "fk_classes_creator",
+          "tableFrom": "classes",
+          "tableTo": "users",
+          "columnsFrom": [
+            "created_by_user_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {
+        "classes_id": {
+          "name": "classes_id",
+          "columns": [
+            "id"
+          ]
+        }
+      },
+      "uniqueConstraints": {
+        "uq_classes_org_id": {
+          "name": "uq_classes_org_id",
+          "columns": [
+            "organization_id",
+            "id"
+          ]
+        }
+      },
+      "checkConstraint": {}
+    },
+    "csv_import_jobs": {
+      "name": "csv_import_jobs",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "char(36) CHARACTER SET ascii COLLATE ascii_bin",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "organization_id": {
+          "name": "organization_id",
+          "type": "char(36) CHARACTER SET ascii COLLATE ascii_bin",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "uploaded_by_user_id": {
+          "name": "uploaded_by_user_id",
+          "type": "char(36) CHARACTER SET ascii COLLATE ascii_bin",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "target_class_id": {
+          "name": "target_class_id",
+          "type": "char(36) CHARACTER SET ascii COLLATE ascii_bin",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "source_filename": {
+          "name": "source_filename",
+          "type": "varchar(255)",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "status": {
+          "name": "status",
+          "type": "varchar(32)",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "total_rows": {
+          "name": "total_rows",
+          "type": "int",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": 0
+        },
+        "succeeded_rows": {
+          "name": "succeeded_rows",
+          "type": "int",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": 0
+        },
+        "failed_rows": {
+          "name": "failed_rows",
+          "type": "int",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": 0
+        },
+        "error_summary_json": {
+          "name": "error_summary_json",
+          "type": "json",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "datetime(3)",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "completed_at": {
+          "name": "completed_at",
+          "type": "datetime(3)",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        }
+      },
+      "indexes": {
+        "idx_csv_jobs_org_created": {
+          "name": "idx_csv_jobs_org_created",
+          "columns": [
+            "organization_id",
+            "created_at"
+          ],
+          "isUnique": false
+        }
+      },
+      "foreignKeys": {
+        "fk_csv_jobs_org": {
+          "name": "fk_csv_jobs_org",
+          "tableFrom": "csv_import_jobs",
+          "tableTo": "organizations",
+          "columnsFrom": [
+            "organization_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        },
+        "fk_csv_jobs_uploader": {
+          "name": "fk_csv_jobs_uploader",
+          "tableFrom": "csv_import_jobs",
+          "tableTo": "users",
+          "columnsFrom": [
+            "uploaded_by_user_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        },
+        "fk_csv_jobs_class": {
+          "name": "fk_csv_jobs_class",
+          "tableFrom": "csv_import_jobs",
+          "tableTo": "classes",
+          "columnsFrom": [
+            "organization_id",
+            "target_class_id"
+          ],
+          "columnsTo": [
+            "organization_id",
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {
+        "csv_import_jobs_id": {
+          "name": "csv_import_jobs_id",
+          "columns": [
+            "id"
+          ]
+        }
+      },
+      "uniqueConstraints": {},
+      "checkConstraint": {}
+    },
+    "student_goals": {
+      "name": "student_goals",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "char(36) CHARACTER SET ascii COLLATE ascii_bin",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "organization_id": {
+          "name": "organization_id",
+          "type": "char(36) CHARACTER SET ascii COLLATE ascii_bin",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "student_membership_id": {
+          "name": "student_membership_id",
+          "type": "char(36) CHARACTER SET ascii COLLATE ascii_bin",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "class_id": {
+          "name": "class_id",
+          "type": "char(36) CHARACTER SET ascii COLLATE ascii_bin",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "created_by_teacher_membership_id": {
+          "name": "created_by_teacher_membership_id",
+          "type": "char(36) CHARACTER SET ascii COLLATE ascii_bin",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "title": {
+          "name": "title",
+          "type": "varchar(255)",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "description": {
+          "name": "description",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "focus_area": {
+          "name": "focus_area",
+          "type": "varchar(64)",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "status": {
+          "name": "status",
+          "type": "varchar(32)",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": "'active'"
+        },
+        "target_date": {
+          "name": "target_date",
+          "type": "date",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "achieved_at": {
+          "name": "achieved_at",
+          "type": "datetime(3)",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "datetime(3)",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "datetime(3)",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        }
+      },
+      "indexes": {
+        "idx_goals_student_status": {
+          "name": "idx_goals_student_status",
+          "columns": [
+            "organization_id",
+            "student_membership_id",
+            "status"
+          ],
+          "isUnique": false
+        },
+        "idx_goals_class": {
+          "name": "idx_goals_class",
+          "columns": [
+            "organization_id",
+            "class_id",
+            "status"
+          ],
+          "isUnique": false
+        }
+      },
+      "foreignKeys": {
+        "fk_goals_student": {
+          "name": "fk_goals_student",
+          "tableFrom": "student_goals",
+          "tableTo": "organization_memberships",
+          "columnsFrom": [
+            "organization_id",
+            "student_membership_id"
+          ],
+          "columnsTo": [
+            "organization_id",
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        },
+        "fk_goals_teacher": {
+          "name": "fk_goals_teacher",
+          "tableFrom": "student_goals",
+          "tableTo": "organization_memberships",
+          "columnsFrom": [
+            "organization_id",
+            "created_by_teacher_membership_id"
+          ],
+          "columnsTo": [
+            "organization_id",
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        },
+        "fk_goals_class": {
+          "name": "fk_goals_class",
+          "tableFrom": "student_goals",
+          "tableTo": "classes",
+          "columnsFrom": [
+            "organization_id",
+            "class_id"
+          ],
+          "columnsTo": [
+            "organization_id",
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {
+        "student_goals_id": {
+          "name": "student_goals_id",
+          "columns": [
+            "id"
+          ]
+        }
+      },
+      "uniqueConstraints": {},
+      "checkConstraint": {}
+    },
+    "student_profiles": {
+      "name": "student_profiles",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "char(36) CHARACTER SET ascii COLLATE ascii_bin",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "organization_id": {
+          "name": "organization_id",
+          "type": "char(36) CHARACTER SET ascii COLLATE ascii_bin",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "student_membership_id": {
+          "name": "student_membership_id",
+          "type": "char(36) CHARACTER SET ascii COLLATE ascii_bin",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "preferred_name": {
+          "name": "preferred_name",
+          "type": "varchar(255)",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "support_preferences_json": {
+          "name": "support_preferences_json",
+          "type": "json",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "datetime(3)",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "datetime(3)",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {
+        "fk_student_profiles_member": {
+          "name": "fk_student_profiles_member",
+          "tableFrom": "student_profiles",
+          "tableTo": "organization_memberships",
+          "columnsFrom": [
+            "organization_id",
+            "student_membership_id"
+          ],
+          "columnsTo": [
+            "organization_id",
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {
+        "student_profiles_id": {
+          "name": "student_profiles_id",
+          "columns": [
+            "id"
+          ]
+        }
+      },
+      "uniqueConstraints": {
+        "uq_student_profiles_member": {
+          "name": "uq_student_profiles_member",
+          "columns": [
+            "organization_id",
+            "student_membership_id"
+          ]
+        }
+      },
+      "checkConstraint": {}
+    },
+    "content_approvals": {
+      "name": "content_approvals",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "char(36) CHARACTER SET ascii COLLATE ascii_bin",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "content_version_id": {
+          "name": "content_version_id",
+          "type": "char(36) CHARACTER SET ascii COLLATE ascii_bin",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "submission_round": {
+          "name": "submission_round",
+          "type": "int",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": 1
+        },
+        "submitted_by_user_id": {
+          "name": "submitted_by_user_id",
+          "type": "char(36) CHARACTER SET ascii COLLATE ascii_bin",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "submitted_at": {
+          "name": "submitted_at",
+          "type": "datetime(3)",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "reviewer_user_id": {
+          "name": "reviewer_user_id",
+          "type": "char(36) CHARACTER SET ascii COLLATE ascii_bin",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "decision": {
+          "name": "decision",
+          "type": "varchar(32)",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": "'pending'"
+        },
+        "decision_note": {
+          "name": "decision_note",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "is_self_approval": {
+          "name": "is_self_approval",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": false
+        },
+        "active_admin_count_at_decision": {
+          "name": "active_admin_count_at_decision",
+          "type": "int",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "decided_at": {
+          "name": "decided_at",
+          "type": "datetime(3)",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "pending_version_guard": {
+          "name": "pending_version_guard",
+          "type": "char(36) CHARACTER SET ascii COLLATE ascii_bin",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false,
+          "generated": {
+            "as": "CASE WHEN decision = 'pending' THEN content_version_id ELSE NULL END",
+            "type": "virtual"
+          }
+        }
+      },
+      "indexes": {
+        "idx_approvals_version_decision": {
+          "name": "idx_approvals_version_decision",
+          "columns": [
+            "content_version_id",
+            "decision"
+          ],
+          "isUnique": false
+        }
+      },
+      "foreignKeys": {
+        "fk_approvals_version": {
+          "name": "fk_approvals_version",
+          "tableFrom": "content_approvals",
+          "tableTo": "content_versions",
+          "columnsFrom": [
+            "content_version_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        },
+        "fk_approvals_submitter": {
+          "name": "fk_approvals_submitter",
+          "tableFrom": "content_approvals",
+          "tableTo": "users",
+          "columnsFrom": [
+            "submitted_by_user_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        },
+        "fk_approvals_reviewer": {
+          "name": "fk_approvals_reviewer",
+          "tableFrom": "content_approvals",
+          "tableTo": "users",
+          "columnsFrom": [
+            "reviewer_user_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {
+        "content_approvals_id": {
+          "name": "content_approvals_id",
+          "columns": [
+            "id"
+          ]
+        }
+      },
+      "uniqueConstraints": {
+        "uq_approvals_version_round": {
+          "name": "uq_approvals_version_round",
+          "columns": [
+            "content_version_id",
+            "submission_round"
+          ]
+        },
+        "uq_approvals_single_pending": {
+          "name": "uq_approvals_single_pending",
+          "columns": [
+            "pending_version_guard"
+          ]
+        }
+      },
+      "checkConstraint": {}
+    },
+    "content_items": {
+      "name": "content_items",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "char(36) CHARACTER SET ascii COLLATE ascii_bin",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "slug": {
+          "name": "slug",
+          "type": "varchar(128)",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "content_type": {
+          "name": "content_type",
+          "type": "varchar(32)",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "current_published_version_id": {
+          "name": "current_published_version_id",
+          "type": "char(36) CHARACTER SET ascii COLLATE ascii_bin",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "created_by_user_id": {
+          "name": "created_by_user_id",
+          "type": "char(36) CHARACTER SET ascii COLLATE ascii_bin",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "is_archived": {
+          "name": "is_archived",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "datetime(3)",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "datetime(3)",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        }
+      },
+      "indexes": {
+        "idx_content_items_type_archived": {
+          "name": "idx_content_items_type_archived",
+          "columns": [
+            "content_type",
+            "is_archived"
+          ],
+          "isUnique": false
+        }
+      },
+      "foreignKeys": {
+        "fk_content_items_creator": {
+          "name": "fk_content_items_creator",
+          "tableFrom": "content_items",
+          "tableTo": "users",
+          "columnsFrom": [
+            "created_by_user_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        },
+        "fk_content_items_pub_version": {
+          "name": "fk_content_items_pub_version",
+          "tableFrom": "content_items",
+          "tableTo": "content_versions",
+          "columnsFrom": [
+            "id",
+            "current_published_version_id"
+          ],
+          "columnsTo": [
+            "content_item_id",
+            "id"
+          ],
+          "onDelete": "restrict",
+          "onUpdate": "restrict"
+        }
+      },
+      "compositePrimaryKeys": {
+        "content_items_id": {
+          "name": "content_items_id",
+          "columns": [
+            "id"
+          ]
+        }
+      },
+      "uniqueConstraints": {
+        "uq_content_items_slug": {
+          "name": "uq_content_items_slug",
+          "columns": [
+            "slug"
+          ]
+        }
+      },
+      "checkConstraint": {}
+    },
+    "content_versions": {
+      "name": "content_versions",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "char(36) CHARACTER SET ascii COLLATE ascii_bin",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "content_item_id": {
+          "name": "content_item_id",
+          "type": "char(36) CHARACTER SET ascii COLLATE ascii_bin",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "version_number": {
+          "name": "version_number",
+          "type": "int",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "status": {
+          "name": "status",
+          "type": "varchar(32)",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": "'draft'"
+        },
+        "title": {
+          "name": "title",
+          "type": "varchar(255)",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "summary": {
+          "name": "summary",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "locale": {
+          "name": "locale",
+          "type": "varchar(16)",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": "'vi'"
+        },
+        "payload_json": {
+          "name": "payload_json",
+          "type": "json",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "metadata_json": {
+          "name": "metadata_json",
+          "type": "json",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "created_by_user_id": {
+          "name": "created_by_user_id",
+          "type": "char(36) CHARACTER SET ascii COLLATE ascii_bin",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "published_by_user_id": {
+          "name": "published_by_user_id",
+          "type": "char(36) CHARACTER SET ascii COLLATE ascii_bin",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "published_at": {
+          "name": "published_at",
+          "type": "datetime(3)",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "datetime(3)",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "datetime(3)",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        }
+      },
+      "indexes": {
+        "idx_content_versions_status": {
+          "name": "idx_content_versions_status",
+          "columns": [
+            "status",
+            "content_item_id"
+          ],
+          "isUnique": false
+        }
+      },
+      "foreignKeys": {
+        "fk_content_versions_item": {
+          "name": "fk_content_versions_item",
+          "tableFrom": "content_versions",
+          "tableTo": "content_items",
+          "columnsFrom": [
+            "content_item_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        },
+        "fk_content_versions_creator": {
+          "name": "fk_content_versions_creator",
+          "tableFrom": "content_versions",
+          "tableTo": "users",
+          "columnsFrom": [
+            "created_by_user_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        },
+        "fk_content_versions_publisher": {
+          "name": "fk_content_versions_publisher",
+          "tableFrom": "content_versions",
+          "tableTo": "users",
+          "columnsFrom": [
+            "published_by_user_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {
+        "content_versions_id": {
+          "name": "content_versions_id",
+          "columns": [
+            "id"
+          ]
+        }
+      },
+      "uniqueConstraints": {
+        "uq_content_versions_item_num": {
+          "name": "uq_content_versions_item_num",
+          "columns": [
+            "content_item_id",
+            "version_number"
+          ]
+        },
+        "uq_content_versions_item_id": {
+          "name": "uq_content_versions_item_id",
+          "columns": [
+            "content_item_id",
+            "id"
+          ]
+        }
+      },
+      "checkConstraint": {}
+    },
+    "activity_attempt_turns": {
+      "name": "activity_attempt_turns",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "char(36) CHARACTER SET ascii COLLATE ascii_bin",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "organization_id": {
+          "name": "organization_id",
+          "type": "char(36) CHARACTER SET ascii COLLATE ascii_bin",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "attempt_id": {
+          "name": "attempt_id",
+          "type": "char(36) CHARACTER SET ascii COLLATE ascii_bin",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "turn_index": {
+          "name": "turn_index",
+          "type": "int",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "step_key": {
+          "name": "step_key",
+          "type": "varchar(64)",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "selected_choice_key": {
+          "name": "selected_choice_key",
+          "type": "varchar(128)",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "selected_emotion_key": {
+          "name": "selected_emotion_key",
+          "type": "varchar(64)",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "used_aac": {
+          "name": "used_aac",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": false
+        },
+        "used_read_aloud": {
+          "name": "used_read_aloud",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": false
+        },
+        "response_payload_json": {
+          "name": "response_payload_json",
+          "type": "json",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "responded_at": {
+          "name": "responded_at",
+          "type": "datetime(3)",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        }
+      },
+      "indexes": {
+        "idx_turns_org_attempt": {
+          "name": "idx_turns_org_attempt",
+          "columns": [
+            "organization_id",
+            "attempt_id"
+          ],
+          "isUnique": false
+        }
+      },
+      "foreignKeys": {
+        "fk_turns_attempt": {
+          "name": "fk_turns_attempt",
+          "tableFrom": "activity_attempt_turns",
+          "tableTo": "activity_attempts",
+          "columnsFrom": [
+            "organization_id",
+            "attempt_id"
+          ],
+          "columnsTo": [
+            "organization_id",
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {
+        "activity_attempt_turns_id": {
+          "name": "activity_attempt_turns_id",
+          "columns": [
+            "id"
+          ]
+        }
+      },
+      "uniqueConstraints": {
+        "uq_turns_attempt_idx": {
+          "name": "uq_turns_attempt_idx",
+          "columns": [
+            "attempt_id",
+            "turn_index"
+          ]
+        }
+      },
+      "checkConstraint": {}
+    },
+    "activity_attempts": {
+      "name": "activity_attempts",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "char(36) CHARACTER SET ascii COLLATE ascii_bin",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "organization_id": {
+          "name": "organization_id",
+          "type": "char(36) CHARACTER SET ascii COLLATE ascii_bin",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "assignment_id": {
+          "name": "assignment_id",
+          "type": "char(36) CHARACTER SET ascii COLLATE ascii_bin",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "assignment_target_id": {
+          "name": "assignment_target_id",
+          "type": "char(36) CHARACTER SET ascii COLLATE ascii_bin",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "assignment_item_id": {
+          "name": "assignment_item_id",
+          "type": "char(36) CHARACTER SET ascii COLLATE ascii_bin",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "student_membership_id": {
+          "name": "student_membership_id",
+          "type": "char(36) CHARACTER SET ascii COLLATE ascii_bin",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "content_version_id": {
+          "name": "content_version_id",
+          "type": "char(36) CHARACTER SET ascii COLLATE ascii_bin",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "attempt_number": {
+          "name": "attempt_number",
+          "type": "int",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "start_idempotency_key": {
+          "name": "start_idempotency_key",
+          "type": "varchar(64)",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "status": {
+          "name": "status",
+          "type": "varchar(32)",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": "'in_progress'"
+        },
+        "started_at": {
+          "name": "started_at",
+          "type": "datetime(3)",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "last_interacted_at": {
+          "name": "last_interacted_at",
+          "type": "datetime(3)",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "completed_at": {
+          "name": "completed_at",
+          "type": "datetime(3)",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "duration_seconds": {
+          "name": "duration_seconds",
+          "type": "int",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": 0
+        },
+        "used_aac_support": {
+          "name": "used_aac_support",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": false
+        },
+        "used_read_aloud": {
+          "name": "used_read_aloud",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": false
+        },
+        "aac_tap_count": {
+          "name": "aac_tap_count",
+          "type": "int",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": 0
+        },
+        "read_aloud_count": {
+          "name": "read_aloud_count",
+          "type": "int",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": 0
+        },
+        "response_summary_json": {
+          "name": "response_summary_json",
+          "type": "json",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "in_progress_target_guard": {
+          "name": "in_progress_target_guard",
+          "type": "char(36) CHARACTER SET ascii COLLATE ascii_bin",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false,
+          "generated": {
+            "as": "CASE WHEN status = 'in_progress' THEN assignment_target_id ELSE NULL END",
+            "type": "virtual"
+          }
+        },
+        "in_progress_item_guard": {
+          "name": "in_progress_item_guard",
+          "type": "char(36) CHARACTER SET ascii COLLATE ascii_bin",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false,
+          "generated": {
+            "as": "CASE WHEN status = 'in_progress' THEN assignment_item_id ELSE NULL END",
+            "type": "virtual"
+          }
+        }
+      },
+      "indexes": {
+        "idx_attempts_student_status": {
+          "name": "idx_attempts_student_status",
+          "columns": [
+            "organization_id",
+            "student_membership_id",
+            "status",
+            "started_at"
+          ],
+          "isUnique": false
+        },
+        "idx_attempts_target_item_status": {
+          "name": "idx_attempts_target_item_status",
+          "columns": [
+            "organization_id",
+            "assignment_target_id",
+            "assignment_item_id",
+            "status"
+          ],
+          "isUnique": false
+        }
+      },
+      "foreignKeys": {
+        "fk_attempts_target": {
+          "name": "fk_attempts_target",
+          "tableFrom": "activity_attempts",
+          "tableTo": "assignment_targets",
+          "columnsFrom": [
+            "organization_id",
+            "assignment_id",
+            "student_membership_id",
+            "assignment_target_id"
+          ],
+          "columnsTo": [
+            "organization_id",
+            "assignment_id",
+            "student_membership_id",
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        },
+        "fk_attempts_item": {
+          "name": "fk_attempts_item",
+          "tableFrom": "activity_attempts",
+          "tableTo": "assignment_items",
+          "columnsFrom": [
+            "organization_id",
+            "assignment_id",
+            "content_version_id",
+            "assignment_item_id"
+          ],
+          "columnsTo": [
+            "organization_id",
+            "assignment_id",
+            "content_version_id",
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        },
+        "fk_attempts_student": {
+          "name": "fk_attempts_student",
+          "tableFrom": "activity_attempts",
+          "tableTo": "organization_memberships",
+          "columnsFrom": [
+            "organization_id",
+            "student_membership_id"
+          ],
+          "columnsTo": [
+            "organization_id",
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        },
+        "fk_attempts_version": {
+          "name": "fk_attempts_version",
+          "tableFrom": "activity_attempts",
+          "tableTo": "content_versions",
+          "columnsFrom": [
+            "content_version_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {
+        "activity_attempts_id": {
+          "name": "activity_attempts_id",
+          "columns": [
+            "id"
+          ]
+        }
+      },
+      "uniqueConstraints": {
+        "uq_attempts_org_id": {
+          "name": "uq_attempts_org_id",
+          "columns": [
+            "organization_id",
+            "id"
+          ]
+        },
+        "uq_attempts_org_student_id": {
+          "name": "uq_attempts_org_student_id",
+          "columns": [
+            "organization_id",
+            "student_membership_id",
+            "id"
+          ]
+        },
+        "uq_attempts_org_assign_student_id": {
+          "name": "uq_attempts_org_assign_student_id",
+          "columns": [
+            "organization_id",
+            "assignment_id",
+            "student_membership_id",
+            "id"
+          ]
+        },
+        "uq_attempts_org_target_student_id": {
+          "name": "uq_attempts_org_target_student_id",
+          "columns": [
+            "organization_id",
+            "assignment_target_id",
+            "student_membership_id",
+            "id"
+          ]
+        },
+        "uq_attempts_number": {
+          "name": "uq_attempts_number",
+          "columns": [
+            "assignment_target_id",
+            "assignment_item_id",
+            "attempt_number"
+          ]
+        },
+        "uq_attempts_idempotency": {
+          "name": "uq_attempts_idempotency",
+          "columns": [
+            "assignment_target_id",
+            "assignment_item_id",
+            "start_idempotency_key"
+          ]
+        },
+        "uq_attempts_single_in_progress": {
+          "name": "uq_attempts_single_in_progress",
+          "columns": [
+            "in_progress_target_guard",
+            "in_progress_item_guard"
+          ]
+        }
+      },
+      "checkConstraint": {}
+    },
+    "assignment_items": {
+      "name": "assignment_items",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "char(36) CHARACTER SET ascii COLLATE ascii_bin",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "organization_id": {
+          "name": "organization_id",
+          "type": "char(36) CHARACTER SET ascii COLLATE ascii_bin",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "assignment_id": {
+          "name": "assignment_id",
+          "type": "char(36) CHARACTER SET ascii COLLATE ascii_bin",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "content_version_id": {
+          "name": "content_version_id",
+          "type": "char(36) CHARACTER SET ascii COLLATE ascii_bin",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "sort_order": {
+          "name": "sort_order",
+          "type": "int",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": 0
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "datetime(3)",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        }
+      },
+      "indexes": {
+        "idx_assignment_items_assignment": {
+          "name": "idx_assignment_items_assignment",
+          "columns": [
+            "organization_id",
+            "assignment_id"
+          ],
+          "isUnique": false
+        }
+      },
+      "foreignKeys": {
+        "fk_assignment_items_assignment": {
+          "name": "fk_assignment_items_assignment",
+          "tableFrom": "assignment_items",
+          "tableTo": "assignments",
+          "columnsFrom": [
+            "organization_id",
+            "assignment_id"
+          ],
+          "columnsTo": [
+            "organization_id",
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        },
+        "fk_assignment_items_version": {
+          "name": "fk_assignment_items_version",
+          "tableFrom": "assignment_items",
+          "tableTo": "content_versions",
+          "columnsFrom": [
+            "content_version_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "restrict"
+        }
+      },
+      "compositePrimaryKeys": {
+        "assignment_items_id": {
+          "name": "assignment_items_id",
+          "columns": [
+            "id"
+          ]
+        }
+      },
+      "uniqueConstraints": {
+        "uq_assignment_items_org_id": {
+          "name": "uq_assignment_items_org_id",
+          "columns": [
+            "organization_id",
+            "id"
+          ]
+        },
+        "uq_assignment_items_org_assign_ver_id": {
+          "name": "uq_assignment_items_org_assign_ver_id",
+          "columns": [
+            "organization_id",
+            "assignment_id",
+            "content_version_id",
+            "id"
+          ]
+        },
+        "uq_assignment_items_order": {
+          "name": "uq_assignment_items_order",
+          "columns": [
+            "assignment_id",
+            "sort_order"
+          ]
+        }
+      },
+      "checkConstraint": {}
+    },
+    "assignment_progress": {
+      "name": "assignment_progress",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "char(36) CHARACTER SET ascii COLLATE ascii_bin",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "organization_id": {
+          "name": "organization_id",
+          "type": "char(36) CHARACTER SET ascii COLLATE ascii_bin",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "assignment_target_id": {
+          "name": "assignment_target_id",
+          "type": "char(36) CHARACTER SET ascii COLLATE ascii_bin",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "student_membership_id": {
+          "name": "student_membership_id",
+          "type": "char(36) CHARACTER SET ascii COLLATE ascii_bin",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "active_attempt_id": {
+          "name": "active_attempt_id",
+          "type": "char(36) CHARACTER SET ascii COLLATE ascii_bin",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "latest_completed_attempt_id": {
+          "name": "latest_completed_attempt_id",
+          "type": "char(36) CHARACTER SET ascii COLLATE ascii_bin",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "total_items": {
+          "name": "total_items",
+          "type": "int",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "completed_items": {
+          "name": "completed_items",
+          "type": "int",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": 0
+        },
+        "attempt_count": {
+          "name": "attempt_count",
+          "type": "int",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": 0
+        },
+        "status": {
+          "name": "status",
+          "type": "varchar(32)",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": "'not_started'"
+        },
+        "last_activity_at": {
+          "name": "last_activity_at",
+          "type": "datetime(3)",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "completed_at": {
+          "name": "completed_at",
+          "type": "datetime(3)",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "datetime(3)",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        }
+      },
+      "indexes": {
+        "idx_progress_student_status": {
+          "name": "idx_progress_student_status",
+          "columns": [
+            "organization_id",
+            "student_membership_id",
+            "status"
+          ],
+          "isUnique": false
+        }
+      },
+      "foreignKeys": {
+        "fk_progress_target": {
+          "name": "fk_progress_target",
+          "tableFrom": "assignment_progress",
+          "tableTo": "assignment_targets",
+          "columnsFrom": [
+            "organization_id",
+            "student_membership_id",
+            "assignment_target_id"
+          ],
+          "columnsTo": [
+            "organization_id",
+            "student_membership_id",
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        },
+        "fk_progress_active_attempt": {
+          "name": "fk_progress_active_attempt",
+          "tableFrom": "assignment_progress",
+          "tableTo": "activity_attempts",
+          "columnsFrom": [
+            "organization_id",
+            "assignment_target_id",
+            "student_membership_id",
+            "active_attempt_id"
+          ],
+          "columnsTo": [
+            "organization_id",
+            "assignment_target_id",
+            "student_membership_id",
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        },
+        "fk_progress_completed_attempt": {
+          "name": "fk_progress_completed_attempt",
+          "tableFrom": "assignment_progress",
+          "tableTo": "activity_attempts",
+          "columnsFrom": [
+            "organization_id",
+            "assignment_target_id",
+            "student_membership_id",
+            "latest_completed_attempt_id"
+          ],
+          "columnsTo": [
+            "organization_id",
+            "assignment_target_id",
+            "student_membership_id",
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {
+        "assignment_progress_id": {
+          "name": "assignment_progress_id",
+          "columns": [
+            "id"
+          ]
+        }
+      },
+      "uniqueConstraints": {
+        "uq_progress_target": {
+          "name": "uq_progress_target",
+          "columns": [
+            "organization_id",
+            "assignment_target_id"
+          ]
+        }
+      },
+      "checkConstraint": {}
+    },
+    "assignment_targets": {
+      "name": "assignment_targets",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "char(36) CHARACTER SET ascii COLLATE ascii_bin",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "organization_id": {
+          "name": "organization_id",
+          "type": "char(36) CHARACTER SET ascii COLLATE ascii_bin",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "assignment_id": {
+          "name": "assignment_id",
+          "type": "char(36) CHARACTER SET ascii COLLATE ascii_bin",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "student_membership_id": {
+          "name": "student_membership_id",
+          "type": "char(36) CHARACTER SET ascii COLLATE ascii_bin",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "assigned_at": {
+          "name": "assigned_at",
+          "type": "datetime(3)",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        }
+      },
+      "indexes": {
+        "idx_targets_student": {
+          "name": "idx_targets_student",
+          "columns": [
+            "organization_id",
+            "student_membership_id"
+          ],
+          "isUnique": false
+        }
+      },
+      "foreignKeys": {
+        "fk_targets_assignment": {
+          "name": "fk_targets_assignment",
+          "tableFrom": "assignment_targets",
+          "tableTo": "assignments",
+          "columnsFrom": [
+            "organization_id",
+            "assignment_id"
+          ],
+          "columnsTo": [
+            "organization_id",
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        },
+        "fk_targets_student": {
+          "name": "fk_targets_student",
+          "tableFrom": "assignment_targets",
+          "tableTo": "organization_memberships",
+          "columnsFrom": [
+            "organization_id",
+            "student_membership_id"
+          ],
+          "columnsTo": [
+            "organization_id",
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {
+        "assignment_targets_id": {
+          "name": "assignment_targets_id",
+          "columns": [
+            "id"
+          ]
+        }
+      },
+      "uniqueConstraints": {
+        "uq_targets_org_id": {
+          "name": "uq_targets_org_id",
+          "columns": [
+            "organization_id",
+            "id"
+          ]
+        },
+        "uq_targets_assignment_student": {
+          "name": "uq_targets_assignment_student",
+          "columns": [
+            "assignment_id",
+            "student_membership_id"
+          ]
+        },
+        "uq_targets_org_student_id": {
+          "name": "uq_targets_org_student_id",
+          "columns": [
+            "organization_id",
+            "student_membership_id",
+            "id"
+          ]
+        },
+        "uq_targets_org_assign_student_id": {
+          "name": "uq_targets_org_assign_student_id",
+          "columns": [
+            "organization_id",
+            "assignment_id",
+            "student_membership_id",
+            "id"
+          ]
+        }
+      },
+      "checkConstraint": {}
+    },
+    "assignments": {
+      "name": "assignments",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "char(36) CHARACTER SET ascii COLLATE ascii_bin",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "organization_id": {
+          "name": "organization_id",
+          "type": "char(36) CHARACTER SET ascii COLLATE ascii_bin",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "class_id": {
+          "name": "class_id",
+          "type": "char(36) CHARACTER SET ascii COLLATE ascii_bin",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "created_by_teacher_membership_id": {
+          "name": "created_by_teacher_membership_id",
+          "type": "char(36) CHARACTER SET ascii COLLATE ascii_bin",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "title": {
+          "name": "title",
+          "type": "varchar(255)",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "home_practice_instructions": {
+          "name": "home_practice_instructions",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "due_at": {
+          "name": "due_at",
+          "type": "datetime(3)",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "status": {
+          "name": "status",
+          "type": "varchar(32)",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": "'active'"
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "datetime(3)",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "datetime(3)",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        }
+      },
+      "indexes": {
+        "idx_assignments_class_status": {
+          "name": "idx_assignments_class_status",
+          "columns": [
+            "organization_id",
+            "class_id",
+            "status"
+          ],
+          "isUnique": false
+        },
+        "idx_assignments_creator": {
+          "name": "idx_assignments_creator",
+          "columns": [
+            "organization_id",
+            "created_by_teacher_membership_id"
+          ],
+          "isUnique": false
+        }
+      },
+      "foreignKeys": {
+        "fk_assignments_class": {
+          "name": "fk_assignments_class",
+          "tableFrom": "assignments",
+          "tableTo": "classes",
+          "columnsFrom": [
+            "organization_id",
+            "class_id"
+          ],
+          "columnsTo": [
+            "organization_id",
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        },
+        "fk_assignments_creator": {
+          "name": "fk_assignments_creator",
+          "tableFrom": "assignments",
+          "tableTo": "organization_memberships",
+          "columnsFrom": [
+            "organization_id",
+            "created_by_teacher_membership_id"
+          ],
+          "columnsTo": [
+            "organization_id",
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {
+        "assignments_id": {
+          "name": "assignments_id",
+          "columns": [
+            "id"
+          ]
+        }
+      },
+      "uniqueConstraints": {
+        "uq_assignments_org_id": {
+          "name": "uq_assignments_org_id",
+          "columns": [
+            "organization_id",
+            "id"
+          ]
+        },
+        "uq_assignments_org_class_id": {
+          "name": "uq_assignments_org_class_id",
+          "columns": [
+            "organization_id",
+            "class_id",
+            "id"
+          ]
+        }
+      },
+      "checkConstraint": {}
+    },
+    "teacher_observations": {
+      "name": "teacher_observations",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "char(36) CHARACTER SET ascii COLLATE ascii_bin",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "organization_id": {
+          "name": "organization_id",
+          "type": "char(36) CHARACTER SET ascii COLLATE ascii_bin",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "author_teacher_membership_id": {
+          "name": "author_teacher_membership_id",
+          "type": "char(36) CHARACTER SET ascii COLLATE ascii_bin",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "student_membership_id": {
+          "name": "student_membership_id",
+          "type": "char(36) CHARACTER SET ascii COLLATE ascii_bin",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "class_id": {
+          "name": "class_id",
+          "type": "char(36) CHARACTER SET ascii COLLATE ascii_bin",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "assignment_id": {
+          "name": "assignment_id",
+          "type": "char(36) CHARACTER SET ascii COLLATE ascii_bin",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "attempt_id": {
+          "name": "attempt_id",
+          "type": "char(36) CHARACTER SET ascii COLLATE ascii_bin",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "note_body": {
+          "name": "note_body",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "datetime(3)",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "datetime(3)",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "deleted_at": {
+          "name": "deleted_at",
+          "type": "datetime(3)",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        }
+      },
+      "indexes": {
+        "idx_obs_author_student": {
+          "name": "idx_obs_author_student",
+          "columns": [
+            "organization_id",
+            "author_teacher_membership_id",
+            "student_membership_id",
+            "deleted_at"
+          ],
+          "isUnique": false
+        }
+      },
+      "foreignKeys": {
+        "fk_obs_author": {
+          "name": "fk_obs_author",
+          "tableFrom": "teacher_observations",
+          "tableTo": "organization_memberships",
+          "columnsFrom": [
+            "organization_id",
+            "author_teacher_membership_id"
+          ],
+          "columnsTo": [
+            "organization_id",
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        },
+        "fk_obs_student": {
+          "name": "fk_obs_student",
+          "tableFrom": "teacher_observations",
+          "tableTo": "organization_memberships",
+          "columnsFrom": [
+            "organization_id",
+            "student_membership_id"
+          ],
+          "columnsTo": [
+            "organization_id",
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        },
+        "fk_obs_class": {
+          "name": "fk_obs_class",
+          "tableFrom": "teacher_observations",
+          "tableTo": "classes",
+          "columnsFrom": [
+            "organization_id",
+            "class_id"
+          ],
+          "columnsTo": [
+            "organization_id",
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        },
+        "fk_obs_assignment": {
+          "name": "fk_obs_assignment",
+          "tableFrom": "teacher_observations",
+          "tableTo": "assignments",
+          "columnsFrom": [
+            "organization_id",
+            "class_id",
+            "assignment_id"
+          ],
+          "columnsTo": [
+            "organization_id",
+            "class_id",
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        },
+        "fk_obs_attempt_student": {
+          "name": "fk_obs_attempt_student",
+          "tableFrom": "teacher_observations",
+          "tableTo": "activity_attempts",
+          "columnsFrom": [
+            "organization_id",
+            "student_membership_id",
+            "attempt_id"
+          ],
+          "columnsTo": [
+            "organization_id",
+            "student_membership_id",
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        },
+        "fk_obs_attempt_assignment": {
+          "name": "fk_obs_attempt_assignment",
+          "tableFrom": "teacher_observations",
+          "tableTo": "activity_attempts",
+          "columnsFrom": [
+            "organization_id",
+            "assignment_id",
+            "student_membership_id",
+            "attempt_id"
+          ],
+          "columnsTo": [
+            "organization_id",
+            "assignment_id",
+            "student_membership_id",
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {
+        "teacher_observations_id": {
+          "name": "teacher_observations_id",
+          "columns": [
+            "id"
+          ]
+        }
+      },
+      "uniqueConstraints": {},
+      "checkConstraint": {}
+    },
+    "org_insight_daily_snapshots": {
+      "name": "org_insight_daily_snapshots",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "char(36) CHARACTER SET ascii COLLATE ascii_bin",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "organization_id": {
+          "name": "organization_id",
+          "type": "char(36) CHARACTER SET ascii COLLATE ascii_bin",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "period_type": {
+          "name": "period_type",
+          "type": "varchar(16)",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": "'daily'"
+        },
+        "snapshot_date": {
+          "name": "snapshot_date",
+          "type": "date",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "content_type": {
+          "name": "content_type",
+          "type": "varchar(32)",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "eligible_enrolled_students_count": {
+          "name": "eligible_enrolled_students_count",
+          "type": "int",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": 0
+        },
+        "active_students_count": {
+          "name": "active_students_count",
+          "type": "int",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": 0
+        },
+        "attempts_started_count": {
+          "name": "attempts_started_count",
+          "type": "int",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": 0
+        },
+        "attempts_completed_count": {
+          "name": "attempts_completed_count",
+          "type": "int",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": 0
+        },
+        "distinct_content_used_count": {
+          "name": "distinct_content_used_count",
+          "type": "int",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": 0
+        },
+        "aac_assisted_attempts_count": {
+          "name": "aac_assisted_attempts_count",
+          "type": "int",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": 0
+        },
+        "read_aloud_assisted_attempts_count": {
+          "name": "read_aloud_assisted_attempts_count",
+          "type": "int",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": 0
+        },
+        "active_goals_count": {
+          "name": "active_goals_count",
+          "type": "int",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": 0
+        },
+        "achieved_goals_count": {
+          "name": "achieved_goals_count",
+          "type": "int",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": 0
+        },
+        "choice_trends_summary_json": {
+          "name": "choice_trends_summary_json",
+          "type": "json",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "computed_at": {
+          "name": "computed_at",
+          "type": "datetime(3)",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        }
+      },
+      "indexes": {
+        "idx_org_insights_org_date": {
+          "name": "idx_org_insights_org_date",
+          "columns": [
+            "organization_id",
+            "period_type",
+            "snapshot_date"
+          ],
+          "isUnique": false
+        }
+      },
+      "foreignKeys": {
+        "fk_org_insights_org": {
+          "name": "fk_org_insights_org",
+          "tableFrom": "org_insight_daily_snapshots",
+          "tableTo": "organizations",
+          "columnsFrom": [
+            "organization_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {
+        "org_insight_daily_snapshots_id": {
+          "name": "org_insight_daily_snapshots_id",
+          "columns": [
+            "id"
+          ]
+        }
+      },
+      "uniqueConstraints": {
+        "uq_org_insights_period": {
+          "name": "uq_org_insights_period",
+          "columns": [
+            "organization_id",
+            "period_type",
+            "snapshot_date",
+            "content_type"
+          ]
+        }
+      },
+      "checkConstraint": {}
+    },
+    "audit_logs": {
+      "name": "audit_logs",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "char(36) CHARACTER SET ascii COLLATE ascii_bin",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "organization_id": {
+          "name": "organization_id",
+          "type": "char(36) CHARACTER SET ascii COLLATE ascii_bin",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "actor_user_id": {
+          "name": "actor_user_id",
+          "type": "char(36) CHARACTER SET ascii COLLATE ascii_bin",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "actor_role": {
+          "name": "actor_role",
+          "type": "varchar(32)",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "event_type": {
+          "name": "event_type",
+          "type": "varchar(64)",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "target_type": {
+          "name": "target_type",
+          "type": "varchar(64)",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "target_id": {
+          "name": "target_id",
+          "type": "char(36) CHARACTER SET ascii COLLATE ascii_bin",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "ip_prefix": {
+          "name": "ip_prefix",
+          "type": "varchar(64)",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "metadata_json": {
+          "name": "metadata_json",
+          "type": "json",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "datetime(3)",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        }
+      },
+      "indexes": {
+        "idx_audit_org_created": {
+          "name": "idx_audit_org_created",
+          "columns": [
+            "organization_id",
+            "created_at"
+          ],
+          "isUnique": false
+        },
+        "idx_audit_event_created": {
+          "name": "idx_audit_event_created",
+          "columns": [
+            "event_type",
+            "created_at"
+          ],
+          "isUnique": false
+        },
+        "idx_audit_actor": {
+          "name": "idx_audit_actor",
+          "columns": [
+            "actor_user_id",
+            "created_at"
+          ],
+          "isUnique": false
+        }
+      },
+      "foreignKeys": {
+        "fk_audit_org": {
+          "name": "fk_audit_org",
+          "tableFrom": "audit_logs",
+          "tableTo": "organizations",
+          "columnsFrom": [
+            "organization_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        },
+        "fk_audit_actor": {
+          "name": "fk_audit_actor",
+          "tableFrom": "audit_logs",
+          "tableTo": "users",
+          "columnsFrom": [
+            "actor_user_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {
+        "audit_logs_id": {
+          "name": "audit_logs_id",
+          "columns": [
+            "id"
+          ]
+        }
+      },
+      "uniqueConstraints": {},
+      "checkConstraint": {}
+    }
+  },
+  "views": {},
+  "_meta": {
+    "schemas": {},
+    "tables": {},
+    "columns": {}
+  },
+  "internal": {
+    "tables": {},
+    "indexes": {}
+  }
+}
