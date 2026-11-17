@@ -1,6 +1,13 @@
 import { sql } from 'drizzle-orm';
 import { drizzle, type MySql2Database } from 'drizzle-orm/mysql2';
 import mysql from 'mysql2/promise';
+import { AppError } from '../http/errors.ts';
+import * as schema from './schema/index.ts';
+
+export type MimoraSchema = typeof schema;
+export type MimoraDatabase = MySql2Database<MimoraSchema>;
+export type MimoraTransaction = Parameters<Parameters<MimoraDatabase['transaction']>[0]>[0];
+export type MimoraTransactionConfig = Parameters<MimoraDatabase['transaction']>[1];
 
 export interface TiDbEnvConfig {
   host: string;
@@ -45,7 +52,7 @@ const REQUIRED_ENV_KEYS = [
 ] as const;
 
 let poolInstance: mysql.Pool | null = null;
-let dbInstance: MySql2Database | null = null;
+let dbInstance: MimoraDatabase | null = null;
 
 export function validateTiDbEnv():
   | { ok: true; config: TiDbEnvConfig }
@@ -97,7 +104,7 @@ export function validateTiDbEnv():
 }
 
 function getOrCreateDb():
-  | { ok: true; db: MySql2Database }
+  | { ok: true; db: MimoraDatabase }
   | { ok: false; error: SanitizedDbError } {
   const envCheck = validateTiDbEnv();
   if (!envCheck.ok) {
@@ -123,10 +130,36 @@ function getOrCreateDb():
         rejectUnauthorized: true,
       },
     });
-    dbInstance = drizzle(poolInstance);
+    dbInstance = drizzle(poolInstance, { schema, mode: 'default' });
   }
 
   return { ok: true, db: dbInstance };
+}
+
+export function getDb(): MimoraDatabase {
+  const dbLookup = getOrCreateDb();
+  if (!dbLookup.ok) {
+    const messageKey =
+      dbLookup.error.code === 'DB_CONFIG_MISSING'
+        ? 'error.db.config_missing'
+        : 'error.db.config_invalid';
+    throw new AppError({
+      httpStatus: 500,
+      code: dbLookup.error.code,
+      messageKey,
+      message: 'Cấu hình kết nối cơ sở dữ liệu chưa sẵn sàng hoặc không hợp lệ.',
+      expose: false,
+    });
+  }
+  return dbLookup.db;
+}
+
+export async function withTransaction<T>(
+  fn: (tx: MimoraTransaction) => Promise<T>,
+  config?: MimoraTransactionConfig
+): Promise<T> {
+  const db = getDb();
+  return db.transaction(fn, config);
 }
 
 interface MysqlLikeError {

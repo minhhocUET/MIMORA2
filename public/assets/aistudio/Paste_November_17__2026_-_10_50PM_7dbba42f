@@ -1,0 +1,655 @@
+# MIMORA — P2-06: Student Learning Attempts, Turn Persistence, Support Telemetry & Assignment Progress
+
+## 1. Role
+
+Act as a Senior Backend Engineer specializing in transactional systems, learning-session persistence, concurrency safety, and child-centered educational platforms.
+
+Implement MIMORA's student learning-session lifecycle while preserving the approved architecture, data privacy boundaries, assignment semantics, and SEL principles.
+
+## 2. Context & Goal
+
+P1 is CLOSED.
+
+P2 implementation status:
+
+- P2-01 — Core Backend Foundation: accepted.
+- P2-02 — Authentication & Security: accepted, including subsequent live TiDB repository verification.
+- P2-03 — Organizations, Users, Memberships, Classes and CSV: PASS.
+- P2-04 — Shared SEL Content Library & Approval: PASS.
+- P2-05 — Assignments, Published Content Pinning & Home Practice: PASS, including controlled live TiDB verification.
+
+### Existing technical stack
+
+- Node.js
+- Express 4 + Vite same-origin
+- TypeScript
+- Drizzle ORM + mysql2
+- TiDB Cloud Serverless v8.5.3
+- Zod v4
+- Schema-typed `getDb()` and `withTransaction()`
+- Custom authentication and server-side sessions
+- CSRF and RBAC middleware
+- Vietnamese-first API errors
+- Append-only audit service
+- UUIDv7 helper
+
+### Relevant existing database tables
+
+The current schema includes:
+
+- `assignments`
+- `assignment_items`
+- `assignment_targets`
+- `activity_attempts`
+- `activity_attempt_turns`
+- `assignment_progress`
+- `class_teachers`
+- `class_enrollments`
+- `organization_memberships`
+- `users`
+
+Use the actual Drizzle schema and constraints as the source of truth.
+
+No schema redesign or migration is authorized.
+
+### Important existing P2-05 behavior
+
+- Teachers create assignments for classes they are assigned to.
+- Assignments pin exact published `content_versions.id` values.
+- Co-teachers can view but cannot mutate another Teacher's assignments.
+- Only the original assignment creator can edit or close an assignment.
+- Students see only assignments targeting their authenticated membership.
+- Due dates are informational; late assignments remain accessible.
+- Closed assignments are read-only.
+- Home-practice guidance and accessibility metadata are delivered with the Student assignment.
+
+Preserve these behaviors.
+
+### Approved learning-session rules
+
+1. Each Student activity execution is represented by an `activity_attempts` record.
+2. An unfinished attempt remains `in_progress` until the Student deliberately completes or abandons it.
+3. Network disconnects, browser closure, logout, and session expiration must never automatically abandon an attempt.
+4. Reopening an unfinished activity must resume the existing attempt and restore previously saved turns.
+5. A new attempt after a completed or abandoned attempt requires explicit Student retry intent.
+6. There must be at most one `in_progress` attempt for a given assignment target and assignment item.
+7. Start/resume, retry, turn saving, completion, and abandonment must be idempotent and transactionally safe.
+8. Assignment progress must be synchronized with attempt lifecycle transitions.
+9. Teachers may review attempts/progress only for assigned classes.
+10. Platform Admin must not access individual Student attempts, answers, emotion choices, or turns.
+
+### Child-centered learning principles
+
+- Never force a timer or countdown.
+- Never impose rankings, competitive scores, streak pressure, or penalties.
+- Never equate completion or participation with SEL progress.
+- Never assume one universally correct emotional response.
+- AAC and read-aloud are optional support mechanisms, not weaknesses.
+- Support-use information is descriptive context only, never psychological profiling.
+- Provide predictable, resumable states so children can safely pause and continue.
+
+### Goal
+
+Implement:
+
+1. Idempotent start-or-resume lifecycle.
+2. Explicit deliberate retry.
+3. Persistent activity turns.
+4. Session recovery after logout, expiration, or browser interruption.
+5. Explicit completion.
+6. Deliberate abandonment.
+7. Transactional assignment-progress synchronization.
+8. Optional AAC/read-aloud support-use context.
+9. Teacher read-only attempt/progress review.
+10. Strict Student self-data access.
+11. Concurrency-safe TiDB integration tests.
+
+## 3. Inspect First
+
+Before changing files:
+
+1. Inspect the current workspace and preserve all P2-01 through P2-05 implementation.
+2. Inspect Git/workspace state only as needed to preserve existing files. Do not turn Git restoration into a blocker.
+3. Read the full Drizzle definitions for:
+   - `activity_attempts`
+   - `activity_attempt_turns`
+   - `assignment_progress`
+   - `assignment_targets`
+   - `assignment_items`
+   - `assignments`
+   - `organization_memberships`
+   - `class_teachers`
+   - `users`
+4. Inspect all relevant:
+   - Composite FKs.
+   - Unique indexes.
+   - Virtual generated-column guards.
+   - Idempotency fields.
+   - Attempt-number fields.
+   - Turn-order fields.
+   - Status and timestamp fields.
+5. Inspect the actual implementation of:
+   - `assignment.repository.ts`
+   - `assignment.service.ts`
+   - `assignments.routes.ts`
+   - `auth.ts`
+   - `errors.ts`
+   - `validation.ts`
+   - `audit.service.ts`
+6. Inspect the existing assignment-progress Teacher endpoint from P2-05.
+7. Review the relevant rules in `DATABASE_SCHEMA.md`, `ARCHITECTURE.md`, `PROJECT_STATE.md`, and `CHANGELOG.md`.
+8. Inspect existing test and live TiDB fixture conventions from P2-03, P2-04, and P2-05.
+9. Inspect live table counts and constraints using read-only queries before designing fixtures.
+
+Do not guess field names, status values, or constraint behavior.
+
+Do not assume the presence of an idempotency field without verifying the actual schema.
+
+If the schema cannot support an essential lifecycle requirement, stop and report the exact gap. Do not modify the schema.
+
+### Closed-assignment boundary
+
+P2-05 defines closed assignments as read-only.
+
+Preserve that behavior:
+- Do not permit new attempts or explicit retries on closed assignments.
+- Do not permit turn writes or lifecycle transitions for closed assignments.
+- Do not automatically abandon or delete an existing unfinished attempt merely because its assignment was closed.
+- Preserve its previously saved state.
+- Report the resulting resume restriction clearly in the API contract.
+
+Do not silently reopen assignments.
+
+## 4. Authorized Scope
+
+### A. Attempt repository
+
+Create:
+
+`src/server/repositories/attempt.repository.ts`
+
+Implement schema-typed operations for:
+
+- Find assignment target and item.
+- Lock assignment target with `SELECT ... FOR UPDATE`.
+- Find an existing in-progress attempt.
+- Find previous attempts and calculate the next attempt number.
+- Create attempts.
+- Find attempts by authenticated Student ownership.
+- Find attempts for Teacher review under assigned-class scope.
+- Save turns.
+- Retrieve ordered turns.
+- Complete attempts.
+- Deliberately abandon attempts.
+- Read and transactionally update assignment progress.
+
+Requirements:
+
+- Use Drizzle and parameterized queries.
+- All Student queries must be scoped by the authenticated Student membership.
+- All Teacher queries must be scoped by organization and assigned class.
+- Never expose arbitrary cross-tenant access through an attempt ID.
+- Use the existing `withTransaction()` helper for multi-record state transitions.
+- Use the database's actual unique constraints as an additional concurrency safeguard.
+
+Do not create unrestricted repository methods that return raw records to routes.
+
+### B. Attempt service
+
+Create:
+
+`src/server/services/attempt.service.ts`
+
+Implement the activity lifecycle.
+
+#### 1. Start or resume
+
+Student starts an assignment item using the existing assignment target and item.
+
+The service must:
+
+1. Derive Student membership and organization from `req.auth`.
+2. Verify the assignment target belongs to that Student.
+3. Verify the item belongs to the target's assignment.
+4. Verify the assignment is accessible and active.
+5. Verify the pinned content version is the expected immutable assignment version.
+6. Lock the relevant assignment target row with `FOR UPDATE`.
+7. Check for an existing `in_progress` attempt.
+8. If one exists, return the existing attempt and all previously saved turns in correct order.
+9. If none exists and no previous attempt requires explicit retry intent, create the initial attempt.
+10. Assign the next sequential attempt number safely.
+11. Create or synchronize the corresponding assignment-progress record in the same transaction, according to the actual schema.
+
+Repeated start/resume requests must not create duplicate in-progress attempts.
+
+A network retry after a successful operation must return the existing result rather than create another attempt.
+
+#### 2. Explicit retry
+
+A new attempt may be created after an existing attempt is completed or deliberately abandoned only when the Student explicitly sends:
+
+`intent: "retry"`
+
+Requirements:
+
+- If there is already an in-progress attempt, reject retry with a stable `409` error or return the existing attempt only when the same idempotency request is being replayed.
+- Lock the assignment target before checking or creating the next attempt.
+- Enforce the existing `uq_attempts_single_in_progress` virtual unique guard.
+- Enforce the existing attempt-number unique constraint.
+- Enforce `uq_attempts_idempotency` using the actual schema-defined scope.
+- Do not invent an arbitrary maximum retry count.
+- Do not treat a retry as a penalty or failure.
+
+#### 3. Turn persistence
+
+Create append-only turn-saving behavior.
+
+Requirements:
+
+- Save each submitted activity step using the existing `activity_attempt_turns` structure.
+- Derive attempt ownership from the authenticated Student principal.
+- Verify the attempt belongs to that Student.
+- Verify the attempt is `in_progress`.
+- Verify the assignment is still writable and active.
+- Preserve turn order using the actual schema's index/sequence fields.
+- Prevent duplicate turn indices or duplicate idempotency requests.
+- Ensure replaying a previously successful save does not duplicate the turn.
+- Return the saved turn's stable identifier and current attempt state.
+- Retrieve all saved turns in deterministic ascending order.
+
+Do not silently overwrite a previously saved turn.
+
+If the same turn index is submitted with different content, return a deterministic conflict instead of replacing the earlier content.
+
+Do not store passwords, tokens, cookies, or unrelated personal information in turn payloads.
+
+Turn payloads may contain Student activity responses required for learning continuity, but must never be copied into audit metadata or exposed to Platform Admin.
+
+#### 4. Completion
+
+Student deliberately completes an in-progress attempt.
+
+Requirements:
+
+- Verify Student ownership.
+- Verify attempt is still `in_progress`.
+- Lock the relevant target/attempt rows.
+- Transition to the actual schema's completed status.
+- Set completion timestamp.
+- Synchronize assignment progress in the same transaction.
+- Make repeated completion requests idempotent where safe.
+- Reject conflicting transitions with a stable `409` error.
+- Do not assign points, grades, rankings, or psychological interpretations.
+
+Completion means the activity workflow was completed. It does not mean SEL development was achieved.
+
+#### 5. Deliberate abandonment
+
+Student may explicitly choose to abandon an unfinished attempt.
+
+Requirements:
+
+- Only the owning Student can abandon.
+- Require an explicit user action.
+- Transition using the actual schema's supported status.
+- Persist the last saved turn.
+- Synchronize assignment progress transactionally.
+- Make repeated abandonment safe/idempotent where appropriate.
+- Never label abandonment as failure, bad behavior, or a negative SEL outcome.
+- Never auto-abandon based on inactivity, timeout, logout, browser closure, or network disconnection.
+
+A later new attempt requires explicit retry intent.
+
+### C. Transactional assignment progress
+
+The service must synchronize `assignment_progress` in the same transaction as relevant attempt transitions.
+
+Inspect the actual progress schema first.
+
+Ensure progress represents workflow state and activity participation only.
+
+Requirements:
+
+- Create the progress record when required by the existing schema.
+- Keep total item count consistent with the assignment's actual item set.
+- Update in-progress/completed/attempt information from real attempt records.
+- Handle retries without double-counting a completed item.
+- Handle deliberate abandonment without marking it as completion or failure.
+- Make updates idempotent.
+- Prevent concurrent transactions from producing inconsistent counters or states.
+- Do not infer emotion, personality, mental state, or SEL skill level from turns.
+
+Teacher progress summaries from P2-05 must reflect the current persisted values.
+
+Platform Admin must not receive individual Student progress records.
+
+If the current schema cannot represent a needed distinction, report the exact limitation rather than adding a column.
+
+### D. Support-use context: AAC and read-aloud
+
+Implement optional descriptive support-use metadata only where supported by existing `activity_attempt_turns` or `activity_attempts` fields.
+
+Requirements:
+
+- Record explicit use of AAC/read-aloud when the Student activity flow reports it.
+- Distinguish support selection/use from inferred ability or disability.
+- Allow sessions with no support metadata.
+- Do not treat missing AAC/read-aloud data as a negative result.
+- Do not calculate support-use scores or weakness indicators.
+- Do not infer a psychological profile from this metadata.
+- Keep the metadata separate from Student response content where possible.
+
+Any future reporting must label it as support context, not an outcome or diagnosis.
+
+Do not modify database schema to add telemetry fields.
+
+### E. Authentication and session recovery
+
+Integrate with existing P2-02 sessions without changing authentication architecture.
+
+Requirements:
+
+- A session expiration must not delete or abandon an in-progress attempt.
+- Logging out must not abandon an attempt.
+- A Student can authenticate again and retrieve the same in-progress attempt.
+- Previously saved turns remain intact.
+- Start/resume after re-authentication returns the same attempt ID.
+- No special browser-local raw session token storage is introduced.
+- No attempt state is stored only in frontend memory.
+
+The backend is the source of truth for attempt state.
+
+### F. Student routes
+
+Create:
+
+`src/server/routes/attempts.routes.ts`
+
+Implement the approved Student endpoints:
+
+| Method | Endpoint | Purpose |
+|---|---|---|
+| POST | `/api/v1/student/assignments/:targetId/items/:itemId/start-or-resume` | Start or resume existing attempt; supports explicit retry intent |
+| GET | `/api/v1/student/attempts/:attemptId` | Retrieve own attempt and saved turns |
+| POST | `/api/v1/student/attempts/:attemptId/turns` | Save a turn |
+| POST | `/api/v1/student/attempts/:attemptId/complete` | Complete attempt |
+| POST | `/api/v1/student/attempts/:attemptId/abandon` | Deliberately abandon attempt |
+
+All Student routes require:
+- `requireAuth`
+- `requireRole('student')`
+- Authenticated CSRF for mutations
+- Zod validation
+
+All Student ownership checks must happen on the server and in database predicates.
+
+Never accept student membership IDs from the request as the authorization identity.
+
+Use a stable `Idempotency-Key` header or actual schema-supported request identifier for mutating lifecycle operations.
+
+Validate the key format and maximum size.
+
+If the existing schema lacks a field required for safe idempotency, stop and report the exact limitation. Do not change schema.
+
+### G. Teacher read-only review routes
+
+Extend or reuse existing P2-05 Teacher APIs.
+
+Provide read-only views for:
+- Assignment progress.
+- Attempts associated with an assignment.
+- Attempt details and ordered turns where approved by the existing privacy architecture.
+
+Requirements:
+
+- Teacher must belong to the active organization.
+- Teacher must be assigned to the assignment's class through `class_teachers`.
+- Attempt must belong to the requested assignment.
+- Teacher cannot mutate attempts.
+- Teacher cannot access attempts outside assigned classes.
+- Co-teacher read access is allowed within the assigned class.
+- Assignment creator-only editing rules do not restrict Teacher read-only review.
+
+Platform Admin must be explicitly denied access to:
+- Individual Student attempt rows.
+- Raw activity turns.
+- Individual emotion choices or response content.
+- Private Teacher observations.
+- Individual Student progress records.
+
+Do not introduce an Admin attempt-inspection endpoint.
+
+### H. Stable child-facing DTOs
+
+Design API responses suitable for the future P3 interface.
+
+Return predictable workflow states such as:
+- `not_started`
+- `in_progress`
+- `completed`
+- `abandoned`
+
+Only use values compatible with the actual schema. Map database status values into stable API state identifiers if needed.
+
+Student responses should include:
+
+- Attempt ID.
+- Assignment/target/item references needed by the client.
+- Pinned content version identity.
+- Current lifecycle state.
+- Ordered saved turns.
+- Resume position.
+- Created/updated/completed timestamps where available.
+- Optional support-use context.
+- Clear action availability, such as whether resume, complete, or retry is allowed.
+
+Do not return:
+- Other Student identities or turns.
+- Password hashes.
+- Session/token information.
+- Internal audit records.
+- Teacher observation notes.
+- Approval history.
+- Platform-only information.
+
+Use Vietnamese-first message keys for all lifecycle errors.
+
+Do not make the child-facing DTO depend on a specific visual design. P3 should be able to build a friendly interface with illustrations, interactive cards, readable text, AAC, and read-aloud without changing backend session semantics.
+
+### I. Concurrency and idempotency requirements
+
+Use transactional row locking and database constraints.
+
+Three mandatory live TiDB tests:
+
+**T-CONC-01 — Parallel start/resume**
+
+- Prepare one eligible target/item.
+- Launch 10 parallel start-or-resume requests.
+- All successful requests must resolve to the same in-progress attempt.
+- Exactly one `activity_attempts` row may be created.
+- Exactly one corresponding in-progress state must exist.
+
+**T-CONC-02 — Parallel deliberate retry**
+
+- Prepare a completed or abandoned previous attempt.
+- Launch 5 parallel explicit retry requests against the same target/item.
+- At most one new in-progress attempt may be created.
+- Other requests must receive the existing idempotent result or deterministic conflict.
+- No duplicate attempt numbers or idempotency records may exist.
+
+**T-CONC-03 — Session expiry and re-login resume**
+
+- Create an in-progress attempt.
+- Save multiple ordered turns.
+- Expire or revoke the authentication session without changing the attempt.
+- Authenticate the synthetic Student again.
+- Call start-or-resume.
+- Verify the same attempt ID is returned.
+- Verify all saved turns remain intact and ordered.
+- Verify no automatic abandonment occurred.
+
+Also test concurrent turn submissions and idempotent completion where feasible.
+
+### J. Controlled live TiDB integration suite
+
+Create:
+
+- `src/server/integration/p2-06-live-tidb.integration.ts`
+- `src/server/integration/p2-06-live-tidb.integration.test.ts`
+
+Use the established P2-03/P2-04/P2-05 synthetic-fixture methodology.
+
+Before DML:
+
+1. Inspect preflight counts for every relevant table.
+2. Verify synthetic IDs are unique.
+3. Record every fixture ID created during this run.
+4. Confirm no existing record will be modified.
+5. Stop if exact cleanup cannot be guaranteed.
+
+Use synthetic organization, Admin/Teacher/Student, class, enrollment, content version, assignment, target, and item fixtures as needed.
+
+Run all three concurrency tests against real TiDB, not fake repositories.
+
+Verify actual:
+- `FOR UPDATE` behavior.
+- Attempt unique indexes.
+- Idempotency unique guards.
+- Turn ordering and uniqueness.
+- Transaction rollback on invalid operations.
+- Assignment progress synchronization.
+
+After all tests:
+- Remove only exact synthetic fixtures created by this test run.
+- Delete in reverse FK dependency order.
+- Verify exact synthetic IDs no longer exist.
+- Verify preflight and post-cleanup row counts match.
+- Verify no pre-existing rows were updated or deleted.
+
+Never seed, modify, or delete existing real Student, Teacher, Admin, organization, content, class, or assignment data.
+
+If any safety precondition fails, do not execute DML. Report `NOT RUN`.
+
+## 5. Explicit Boundaries
+
+- Do NOT change database schema, tables, columns, indexes, FKs, generated columns, or migration files.
+- Do NOT run migrations or seeds.
+- Do NOT automatically abandon attempts.
+- Do NOT automatically create retries.
+- Do NOT impose an arbitrary attempt limit.
+- Do NOT use timers, rankings, competitive scores, streak pressure, or punishments.
+- Do NOT treat completed or abandoned attempts as psychological or SEL outcomes.
+- Do NOT infer weakness from AAC/read-aloud usage.
+- Do NOT expose individual Student learning data to Platform Admin.
+- Do NOT allow cross-Student or cross-tenant attempt access.
+- Do NOT allow Teacher attempt mutations.
+- Do NOT reopen or mutate closed assignments.
+- Do NOT change P2-05 assignment pinning semantics.
+- Do NOT change authentication, password hashing, or CSRF architecture.
+- Do NOT create a Parent Portal.
+- Do NOT implement frontend UI.
+- Do NOT modify unrelated P2-01 through P2-05 modules.
+- Do NOT commit or push Git changes.
+- Do NOT create a separate Git task.
+- Do NOT cold-restart or delete the workspace.
+- Do NOT expose credentials, tokens, cookies, or sensitive Student content.
+
+Live database DML is authorized only for isolated synthetic fixtures described in Section 4.J.
+
+## 6. Acceptance Criteria
+
+P2-06 is PASS only when:
+
+### Attempt lifecycle
+- Student can start an eligible assignment item.
+- Repeated start/resume returns the same in-progress attempt.
+- Student can retrieve all saved turns.
+- Student can save new turns in deterministic order.
+- Duplicate turn submissions are idempotent or safely rejected.
+- Student can deliberately complete an in-progress attempt.
+- Student can deliberately abandon an in-progress attempt.
+- A new attempt requires explicit retry intent.
+- Network interruption, browser closure, logout, and session expiration never auto-abandon attempts.
+- Closed assignments preserve read-only semantics.
+
+### Progress
+- Progress updates occur in the same transaction as lifecycle changes.
+- Retry does not double-count completion.
+- Abandonment is not counted as completion or failure.
+- Teacher progress views reflect persisted workflow state.
+- No psychological or diagnostic inference is generated.
+
+### Ownership and privacy
+- Student can only access their own attempts and turns.
+- Teacher can read attempts only for assigned classes.
+- Co-teachers have read-only review access within assigned classes.
+- Teacher cannot mutate attempts.
+- Admin is blocked from individual attempts, turns, and progress.
+
+### Support metadata
+- Optional AAC/read-aloud support use is recorded only where supported by existing schema.
+- Missing support metadata is neutral.
+- No support-use ranking or weakness score exists.
+
+### Concurrency
+- T-CONC-01: 10 parallel start/resume requests create exactly one in-progress attempt.
+- T-CONC-02: 5 parallel explicit retries create at most one new in-progress attempt.
+- T-CONC-03: session expiry/re-login resumes the same attempt with every saved turn intact.
+- Existing database unique guards and transaction semantics are verified.
+
+### Live TiDB
+- Real repositories and services execute against synthetic fixtures.
+- Preflight and post-cleanup counts match.
+- Zero residual synthetic rows remain.
+- No pre-existing records are modified.
+
+### Regression
+- P2-01 through P2-05 regression tests pass.
+- New service, route, security, and concurrency tests pass.
+- TypeScript check passes.
+- Production build passes.
+- Database health remains HTTP 200.
+- No schema/migration changes occurred.
+
+If any live integration case cannot safely run, mark it `NOT RUN` and explain the exact limitation. Do not fabricate PASS.
+
+## 7. Evidence & Report
+
+Return:
+
+1. Overall verdict: `PASS`, `PARTIAL`, or `FAIL`.
+2. Files created or modified.
+3. Attempt repository/service architecture.
+4. Start/resume, explicit retry, turn, completion, and abandonment behavior.
+5. Idempotency design and database constraints used.
+6. Assignment-progress transaction behavior.
+7. Session-expiry/re-login recovery evidence.
+8. AAC/read-aloud support-context handling.
+9. Student, Teacher, and Admin access-boundary evidence.
+10. T-CONC-01, T-CONC-02, and T-CONC-03 results, with actual TiDB evidence.
+11. Preflight/post-cleanup row-count comparison and residual fixture count.
+12. Full unit/HTTP regression test results.
+13. TypeScript, production build, and DB health results.
+14. Confirmation that no schema/migration changes occurred.
+15. Remaining gaps and deferred decisions.
+
+Cite exact source files, repository methods, services, routes, and test names.
+
+Clearly distinguish fake-repository tests from controlled live TiDB tests.
+
+Use `PASS`, `FAIL`, and `NOT RUN` consistently.
+
+## 8. Stop Condition
+
+Implement only P2-06.
+
+Do not begin the remaining Teacher Observations or Admin Insights work.
+
+Do not change schema or migrations.
+
+Do not implement frontend UI.
+
+Do not perform unrelated Git or infrastructure tasks.
+
+After implementation, tests, and reporting, stop and wait for Technical Lead review.

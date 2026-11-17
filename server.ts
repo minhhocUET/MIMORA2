@@ -1,7 +1,24 @@
 import express, { type NextFunction, type Request, type Response } from 'express';
 import http from 'node:http';
 import { createServer as createViteServer } from 'vite';
+import { getServerConfig } from './src/server/config/env.ts';
 import { checkTiDbHealth, closeTiDbPool } from './src/server/db/tidb.ts';
+import { ApiErrors, toApiErrorEnvelope } from './src/server/http/errors.ts';
+import {
+  apiErrorHandler,
+  apiNotFoundHandler,
+  attachRequestId,
+  baselineSecurityHeaders,
+  getRequestId,
+} from './src/server/http/middleware.ts';
+import { createAdminContentRouter } from './src/server/routes/admin-content.routes.ts';
+import { createAdminUsersRouter } from './src/server/routes/admin-users.routes.ts';
+import { createAssignmentsRouters } from './src/server/routes/assignments.routes.ts';
+import { createAttemptsRouters } from './src/server/routes/attempts.routes.ts';
+import { createAuthRouter } from './src/server/routes/auth.routes.ts';
+import { createClassesRouters } from './src/server/routes/classes.routes.ts';
+import { createLibraryRouter } from './src/server/routes/library.routes.ts';
+import { createAdminOrganizationsRouter } from './src/server/routes/organizations.routes.ts';
 
 function parseCliArgs(argv: string[]): { port?: number; host?: string } {
   let port: number | undefined;
@@ -32,13 +49,17 @@ function parseCliArgs(argv: string[]): { port?: number; host?: string } {
 }
 
 async function startServer() {
+  const serverConfig = getServerConfig();
   const cliArgs = parseCliArgs(process.argv.slice(2));
-  const envPort = process.env.PORT ? Number(process.env.PORT) : undefined;
-  const port = cliArgs.port ?? (envPort && Number.isInteger(envPort) ? envPort : 3000);
-  const host = cliArgs.host ?? '0.0.0.0';
+  const port = cliArgs.port ?? serverConfig.port;
+  const host = cliArgs.host ?? serverConfig.host;
 
   const app = express();
+  app.disable('x-powered-by');
   app.set('trust proxy', 1);
+  app.use(attachRequestId);
+  app.use(baselineSecurityHeaders);
+  app.use('/api', express.json({ limit: serverConfig.jsonBodyLimit }));
   const httpServer = http.createServer(app);
 
   const TEST_COOKIE_NAME = 'mimora_p0_cookie_test';
@@ -160,12 +181,26 @@ async function startServer() {
       });
     });
 
-  app.use('/api', (_req: Request, res: Response) => {
-    res.status(404).json({
-      status: 'error',
-      message: 'API endpoint not found',
-    });
-  });
+  app.use('/api/v1/auth', createAuthRouter());
+
+  const { adminClassesRouter, teacherClassesRouter } = createClassesRouters();
+  const { teacherAssignmentsRouter, studentAssignmentsRouter } =
+    createAssignmentsRouters();
+  const { studentAttemptsRouter, teacherAssignmentAttemptsRouter } =
+    createAttemptsRouters();
+  app.use('/api/v1/admin/organizations/:orgId/classes', adminClassesRouter);
+  app.use('/api/v1/admin', createAdminUsersRouter());
+  app.use('/api/v1/admin', createAdminContentRouter());
+  app.use('/api/v1/admin/organizations', createAdminOrganizationsRouter());
+  app.use('/api/v1/classes', teacherClassesRouter);
+  app.use('/api/v1/library', createLibraryRouter());
+  app.use('/api/v1/assignments', teacherAssignmentsRouter);
+  app.use('/api/v1/assignments', teacherAssignmentAttemptsRouter);
+  app.use('/api/v1/student/assignments', studentAssignmentsRouter);
+  app.use('/api/v1/student', studentAttemptsRouter);
+
+  app.use('/api', apiNotFoundHandler);
+  app.use('/api', apiErrorHandler);
 
   const vite = await createViteServer({
     server: {
@@ -180,9 +215,9 @@ async function startServer() {
   app.use((err: unknown, _req: Request, res: Response, next: NextFunction) => {
     if (err instanceof Error) {
       vite.ssrFixStacktrace(err);
-      console.error('[express-vite-error]', err.stack ?? err.message);
+      console.error(`[express-vite-error] name=${err.name} requestId=${getRequestId(res) ?? 'none'}`);
     } else {
-      console.error('[express-vite-error]', err);
+      console.error(`[express-vite-error] requestId=${getRequestId(res) ?? 'none'}`);
     }
 
     if (res.headersSent) {
@@ -190,10 +225,9 @@ async function startServer() {
       return;
     }
 
-    res.status(500).json({
-      status: 'error',
-      message: 'Internal server error',
-    });
+    const requestId = getRequestId(res);
+    const internalError = ApiErrors.internal();
+    res.status(internalError.httpStatus).json(toApiErrorEnvelope(internalError, requestId));
   });
 
   httpServer.on('error', (err: NodeJS.ErrnoException) => {
