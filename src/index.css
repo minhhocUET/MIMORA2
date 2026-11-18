@@ -1,1 +1,167 @@
 @import "tailwindcss";
+
+:root {
+  /* 60% Warm Neutral Canvas & 30% Structural Surfaces */
+  --mimora-bg: #faf8f4;
+  --mimora-surface: #ffffff;
+  --mimora-surface-subtle: #f3efe8;
+  --mimora-surface-mint: #e8f4f1;
+  --mimora-surface-peach: #fdf0eb;
+  --mimora-surface-lavender: #f1eef9;
+  --mimora-surface-butter: #fdf6de;
+
+  /* Typography & Ink */
+  --mimora-text: #1e292b;
+  --mimora-muted: #526165;
+  --mimora-border: #dfd9ce;
+  --mimora-border-strong: #c5bdb0;
+
+  /* 10% High-Contrast Semantic Accents (WCAG AA compliant) */
+  --mimora-primary: #1a6f6b;
+  --mimora-primary-hover: #145a57;
+  --mimora-primary-ink: #ffffff;
+
+  --mimora-secondary: #5a4c8c;
+  --mimora-secondary-hover: #493d75;
+  --mimora-secondary-ink: #ffffff;
+
+  --mimora-accent: #b84f3b;
+  --mimora-accent-hover: #9b3f2e;
+  --mimora-accent-ink: #ffffff;
+
+  /* Semantic Feedback Tokens */
+  --mimora-success: #1f6e4e;
+  --mimora-success-bg: #e7f5ee;
+  --mimora-success-border: #b6decb;
+
+  --mimora-warning: #8f5c0c;
+  --mimora-warning-bg: #fdf5dc;
+  --mimora-warning-border: #edd79a;
+
+  --mimora-danger: #b43232;
+  --mimora-danger-bg: #fdecec;
+  --mimora-danger-border: #f4c2c2;
+
+  --mimora-focus: #12585c;
+
+  /* Radii & Shadows */
+  --mimora-radius-sm: 0.5rem;
+  --mimora-radius-md: 0.875rem;
+  --mimora-radius-lg: 1.25rem;
+  --mimora-radius-xl: 1.75rem;
+  --mimora-shadow-soft: 0 2px 10px -2px rgba(30, 41, 43, 0.06);
+  --mimora-shadow-pop: 0 12px 32px -8px rgba(30, 41, 43, 0.12);
+}
+
+@theme {
+  --font-sans: "Plus Jakarta Sans", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+
+  --color-mimora-bg: var(--mimora-bg);
+  --color-mimora-surface: var(--mimora-surface);
+  --color-mimora-surface-subtle: var(--mimora-surface-subtle);
+  --color-mimora-surface-mint: var(--mimora-surface-mint);
+  --color-mimora-surface-peach: var(--mimora-surface-peach);
+  --color-mimora-surface-lavender: var(--mimora-surface-lavender);
+  --color-mimora-surface-butter: var(--mimora-surface-butter);
+
+  --color-mimora-text: var(--mimora-text);
+  --color-mimora-muted: var(--mimora-muted);
+  --color-mimora-border: var(--mimora-border);
+  --color-mimora-border-strong: var(--mimora-border-strong);
+
+  --color-mimora-primary: var(--mimora-primary);
+  --color-mimora-primary-hover: var(--mimora-primary-hover);
+  --color-mimora-secondary: var(--mimora-secondary);
+  --color-mimora-accent: var(--mimora-accent);
+
+  --color-mimora-success: var(--mimora-success);
+  --color-mimora-success-bg: var(--mimora-success-bg);
+  --color-mimora-warning: var(--mimora-warning);
+  --color-mimora-warning-bg: var(--mimora-warning-bg);
+  --color-mimora-danger: var(--mimora-danger);
+  --color-mimora-danger-bg: var(--mimora-danger-bg);
+  --color-mimora-focus: var(--mimora-focus);
+}
+
+@layer base {
+  html {
+    font-family: var(--font-sans);
+    background-color: var(--mimora-bg);
+    color: var(--mimora-text);
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
+  }
+
+  body {
+    margin: 0;
+    min-height: 100vh;
+    background-color: var(--mimora-bg);
+    color: var(--mimora-text);
+    overflow-x: hidden;
+  }
+
+  h1, h2, h3 {
+    text-wrap: balance;
+  }
+
+  :focus-visible {
+    outline: 2px solid var(--mimora-focus);
+    outline-offset: 2px;
+  }
+}
+
+.mimora-text-large {
+  font-size: 1.125rem;
+}
+
+.mimora-high-contrast {
+  --mimora-bg: #ffffff;
+  --mimora-surface: #ffffff;
+  --mimora-surface-subtle: #f1f5f4;
+  --mimora-text: #0f1718;
+  --mimora-muted: #344144;
+  --mimora-border: #8c999c;
+  --mimora-primary: #0f524f;
+  --mimora-primary-hover: #0a3d3b;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+.mimora-reduced-motion *,
+.mimora-reduced-motion *::before,
+.mimora-reduced-motion *::after {
+  animation-duration: 0.01ms !important;
+  animation-iteration-count: 1 !important;
+  transition-duration: 0.01ms !important;
+}
+
+@media print {
+  body {
+    background: #ffffff !important;
+    color: #000000 !important;
+  }
+
+  header,
+  aside,
+  .mimora-no-print {
+    display: none !important;
+  }
+
+  .mimora-print-sheet {
+    border: none !important;
+    box-shadow: none !important;
+    padding: 0 !important;
+    margin: 0 !important;
+  }
+}
+

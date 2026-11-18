@@ -1,0 +1,677 @@
+# MIMORA — P4-01: Guardian Account, Family Workspace & Secure Student Linking
+
+## 1. Role
+
+Act as a Senior Full-Stack Architect, Backend Security Engineer and Product Engineer specializing in identity systems, multi-tenant applications and child privacy.
+
+Continue the existing MIMORA codebase.
+
+Implement the foundation for the Guardian and Family experience while preserving the existing School, Teacher and Student workflows.
+
+This phase introduces a new authenticated user role: `guardian`.
+
+Prioritize:
+- One persistent Student identity per child.
+- Secure Guardian–Student relationships.
+- Family workspace isolation.
+- Correct multi-organization membership.
+- Strict privacy and authorization.
+- Backward compatibility with P1–P3.
+- Safe database migrations and testability.
+
+Do not rebuild the existing platform.
+
+## 2. Context & Goal
+
+### Current project status
+
+P1 — Platform Foundation: CLOSED.
+
+P2 — Backend Core: CLOSED.
+- P2-01 Core Backend Foundation.
+- P2-02 Authentication, Sessions, CSRF and RBAC.
+- P2-03 Organizations, Users, Memberships, Classes and CSV Import.
+- P2-04 Content Library, Versioning and Approval.
+- P2-05 Assignments.
+- P2-06 Learning Attempts and Turns.
+- P2-07 Student Profiles, Goals, Private Observations and Admin Insights.
+
+P3 — Frontend & Integration:
+- P3-01 Frontend Foundation.
+- P3-02 Admin and Teacher Portals.
+- P3-03 Student Learning Experience.
+- P3-04 Integration, Accessibility and Regression Verification.
+
+P3-04 implementation has a reported CONDITIONAL PASS:
+- Build and TypeScript: PASS.
+- Frontend automated tests: PASS.
+- Full non-integration suite: 85 PASS, 0 FAIL, 1 SKIPPED.
+- Live read-only health checks: PASS.
+- Browser visual verification and live authenticated multi-role E2E: NOT RUN.
+
+Do not claim these two missing browser verification categories have passed.
+
+### Approved product and account decisions
+
+MIMORA supports three customer models:
+1. Schools and educational organizations.
+2. Independent teachers.
+3. Families purchasing directly for their children.
+
+The approved family model is:
+
+**Guardian**
+- An adult who purchases and manages the family service.
+- Has a separate authenticated account.
+- Can manage multiple linked children.
+- Can be linked to an existing Student account.
+- Will eventually see only general descriptive progress.
+
+**Student**
+- The child who directly uses the learning application.
+- Has a separate authenticated account.
+- Must have exactly one persistent Student identity.
+- Does not need a Teacher to exist or learn.
+- Can participate in a school, independent-teacher or family learning context.
+- Must not receive duplicate accounts when moving between these contexts.
+
+### Immutable identity principles
+
+1. One child = one Student account.
+2. Guardian and Student never share login credentials.
+3. One Guardian may manage multiple Students.
+4. One Student may have multiple independently verified Guardians.
+5. A Student may have both a Family context and a School context.
+6. Linking a Guardian to an existing school Student must reuse the existing Student identity.
+7. Creating a Family Workspace must not automatically create duplicate Student accounts.
+8. A Student account must not depend on Teacher creation or class enrollment.
+
+### Approved Guardian privacy policy
+
+Guardian may eventually see:
+- Their linked children's general learning progress.
+- Program/chapter participation status.
+- Not started, in progress and completed states where supported.
+- General account and program information.
+
+Guardian must never see:
+- Individual Student answers.
+- Learning attempt turns or transcripts.
+- Emotion selections.
+- Body Map selections.
+- Intensity responses.
+- Strategy selections.
+- AAC communications.
+- Private Teacher observations.
+- Psychological interpretations or standardized SEL scores.
+
+Guardian Progress API and dashboard belong to a later P4 package. Do not implement them in P4-01.
+
+### Goal of P4-01
+
+Implement the identity and family-relationship foundation:
+
+1. New `guardian` role.
+2. Guardian registration and authentication.
+3. Family Workspace.
+4. Guardian–Student relationship.
+5. Guardian-created Student account without Teacher involvement.
+6. Secure linking of an existing school Student to a Guardian.
+7. Support for multiple Guardians per Student.
+8. Support for multiple Students per Guardian.
+9. Preserve one Student user identity across Family and School contexts.
+10. Guardian-specific frontend portal foundation.
+
+Do not implement payments, subscriptions or learning progress dashboards.
+
+## 3. Inspect First
+
+Before changing code or schema, inspect the actual current workspace.
+
+### A. Authentication and authorization
+
+Inspect:
+- User model and role representation.
+- `platformRole`, membership role and session scope.
+- Login and logout implementation.
+- `/api/v1/auth/me`.
+- Organization selection and switching.
+- CSRF issuance and validation.
+- Password hashing and password-change behavior.
+- Account lockout and rate limits.
+- Existing registration or invitation services.
+- API error contracts.
+- All RBAC middleware and route guards.
+
+Determine whether `guardian` should be represented as:
+- A new platform-level role.
+- An organization-scoped membership role.
+- Or another compatible identity model.
+
+Choose the least disruptive model that correctly supports the approved permissions.
+
+Do not simply add a frontend role string without implementing backend authorization.
+
+Inspect all strict role validators and role-resolution code.
+
+### B. Organization and membership model
+
+Inspect:
+- `organizations`.
+- Organization status and code constraints.
+- `memberships`.
+- Membership uniqueness.
+- Membership role constraints.
+- `users`.
+- User identity uniqueness.
+- Organization-scoped username behavior.
+- Existing multi-organization membership support.
+- Class membership and enrollment constraints.
+- Student assignment eligibility.
+- Student login requirements.
+
+Determine how one Student `user_id` can participate in:
+- A Family context.
+- A School context.
+- An independent Teacher context.
+
+The Student must retain the same underlying user identity when joining or leaving an organization.
+
+Do not duplicate the Student user row to represent different learning contexts.
+
+### C. Existing assignment and learning model
+
+Inspect P2-05 and P2-06 to identify:
+- Whether a Student must belong to a class to receive an assignment.
+- Whether assignment creation requires a Teacher creator.
+- How assignment targets are represented.
+- Whether one Student can have assignments from different sources.
+- Whether attempt history is scoped to Student identity or membership.
+
+Do not change these systems in P4-01.
+
+Report any limitations that P4-02 will need to address for teacher-free home learning.
+
+### D. Database and migrations
+
+Inspect:
+- Actual Drizzle schema.
+- Existing migration history.
+- Foreign key structure.
+- Unique constraints.
+- Index naming conventions.
+- Current database version and TiDB compatibility.
+- Existing transaction patterns.
+
+Identify the smallest safe schema extension for:
+- Guardian accounts or role representation.
+- Family Workspace.
+- Workspace-to-Guardian membership.
+- Guardian–Student links.
+- Secure Student linking invitations, if needed.
+- Account verification or invitation tokens, if existing services cannot be reused.
+
+Avoid redundant tables or duplicate sources of truth.
+
+### E. Frontend
+
+Inspect:
+- `src/App.tsx`.
+- `src/auth/AuthContext.tsx`.
+- `src/api/client.ts`.
+- `src/types/auth.ts`.
+- Existing Admin, Teacher and Student layouts.
+- Existing reusable UI components.
+- Login and organization selection screens.
+- Localization catalogs.
+- Existing route and tab architecture.
+
+Confirm how Guardian routing can be added without weakening strict role matching.
+
+### F. Existing account migration compatibility
+
+Check:
+- Existing School Students.
+- Existing Teacher-created Students.
+- Existing Admin-created Students.
+- Existing memberships.
+- Existing login credentials.
+- Existing learning attempts and assignments.
+
+The new Family model must not invalidate existing Student login credentials, assignments, attempts, turns or class memberships.
+
+Do not perform data migration against live data.
+
+### G. Report architecture before implementation
+
+Produce an initial architecture decision section that identifies:
+- Existing structures that can be reused.
+- Structures that need extension.
+- New records/tables required.
+- Foreign keys and uniqueness constraints.
+- Guardian authorization rules.
+- Student identity reuse strategy.
+- Migration and rollback implications.
+
+Choose a minimal design and then implement it within the authorized scope.
+
+If a proposed change risks breaking current Student identity or existing memberships, stop before applying that change and report the blocker.
+
+## 4. Authorized Scope
+
+### A. Guardian role and authentication
+
+Implement a separate `guardian` identity and authentication experience.
+
+Requirements:
+- Guardian uses a separate account from Student.
+- Guardian login must not require a School organization code.
+- Guardian self-registration is restricted to Guardian accounts.
+- Public registration must never allow users to assign themselves `platform_admin`, `teacher` or `student`.
+- Guardian identity must be validated through the actual backend session.
+- Guardian routes must be protected by server-side RBAC.
+- Existing Admin, Teacher and Student authentication must continue working.
+- Existing password hashing, CSRF, secure session cookie and rate-limit practices must be preserved.
+
+#### Email verification
+
+A Guardian is an adult account and must have a verified contact method before gaining authority over child accounts.
+
+Inspect whether a real email verification or account invitation system already exists.
+
+- Reuse it where appropriate.
+- If no mail provider is configured, implement a safe pending-verification state only if it can be completed without exposing verification secrets.
+- Do not return verification tokens in production API responses.
+- Do not automatically mark Guardian email as verified.
+- Do not simulate a successful email delivery.
+- Clearly report provider configuration that remains necessary.
+
+Do not build a custom insecure verification shortcut.
+
+### B. Family Workspace
+
+Implement a family-specific workspace that can contain:
+- One or more verified Guardians.
+- One or more Student accounts.
+- Family-level service context for future subscriptions.
+
+Inspect the existing Organization model first.
+
+If it can safely support a `family` organization type without breaking School behavior, prefer reuse.
+
+Otherwise introduce a separate Family Workspace model with explicit relationships.
+
+Do not assume the existing `organizations` table already supports family workspaces.
+
+Requirements:
+- A Guardian can create a Family Workspace.
+- A Guardian can access only Family Workspaces to which they belong.
+- A Family Workspace can have multiple linked Guardians.
+- It can manage multiple Student accounts.
+- The workspace has an independent identity and status.
+- No Family Workspace may grant School Admin or Teacher permissions.
+- No Parent Portal capability may leak into School Admin or Teacher roles.
+
+Do not add subscriptions or billing fields unless a genuinely necessary structural identifier is justified and documented.
+
+### C. Guardian–Student relationships
+
+Implement a canonical and secure Guardian–Student link.
+
+Required behavior:
+- One Guardian can link multiple Students.
+- One Student can be linked to multiple Guardians.
+- Every relationship has explicit status.
+- Unverified or revoked relationships grant no Student access.
+- A Guardian can see only Student accounts connected through an active, verified relationship.
+- Links must reference the canonical Student user identity, not duplicate Student rows.
+- Removing a Guardian link must not delete the Student account.
+- Removing a Guardian link must not delete the Student's School memberships or learning history.
+
+Use safe transaction boundaries and foreign keys.
+
+Define uniqueness rules preventing duplicate active Guardian–Student relationships.
+
+### D. Guardian creates a new Student account
+
+Allow a verified Guardian to create a Student account directly inside their Family Workspace.
+
+This must work without:
+- A Teacher account.
+- A School organization.
+- A class.
+- Teacher enrollment.
+- Admin manually creating the Student.
+
+The workflow should:
+
+1. Guardian opens Family Workspace.
+2. Guardian selects "Thêm hồ sơ học sinh".
+3. Guardian enters the minimum necessary Student information.
+4. Backend creates one canonical Student identity.
+5. Backend associates the Student with the Family context.
+6. Backend creates a verified Guardian–Student relationship.
+7. Backend issues the appropriate Student login credentials or secure initial credential setup.
+8. Student can log in independently.
+
+Use existing password-hashing and authentication security services.
+
+Do not store plaintext passwords.
+
+Do not expose credentials repeatedly through Guardian APIs.
+
+If the existing Student login requires `orgCode` and `orgUsername`, create or reuse compatible Family login identifiers without changing the core Student identity.
+
+Student credentials must be unique in the relevant authentication namespace.
+
+Support a safe initial password-change flow where the current backend supports it. If it does not, document the minimum necessary extension.
+
+Do not ask the child to provide an email address.
+
+Collect only the minimum necessary child information. No diagnosis field or mandatory clinical information.
+
+### E. Link an existing School Student
+
+This is a critical requirement.
+
+When a child already has a Student account created by a Teacher or School Admin, a Guardian must be able to link to that existing account.
+
+Do not create a duplicate Student.
+
+Do not allow a Guardian to find and attach arbitrary Students using:
+- Student name alone.
+- Organization username alone.
+- Email address alone.
+- Guessable organization codes.
+- Unverified search results.
+
+Use a secure invitation/claim workflow.
+
+Recommended design:
+- An authorized Teacher or School Admin initiates an invitation for a specific Student.
+- Backend generates a cryptographically secure, single-use linking token.
+- Store only a hash of the token.
+- Give the token a defined expiry and revocation mechanism.
+- Rate-limit claim attempts.
+- Bind the invitation to its intended Student and context.
+- A verified Guardian claims the invitation.
+- Backend creates the Guardian–Student relationship without creating a new Student identity.
+- Record the source, creator, timestamps and status in an audit event.
+
+If the existing architecture suggests a safer equivalent, explain and implement the equivalent.
+
+An invitation must never expose a Student's private answers or learning history.
+
+Do not implement automatic linking based solely on matching email or name.
+
+### F. Multiple Guardians
+
+Support multiple independently authenticated Guardians linked to one Student.
+
+Requirements:
+- Each Guardian retains their own login.
+- Each relationship is independently verified.
+- Revoking one relationship does not revoke other Guardians.
+- A Guardian can belong to multiple Family Workspaces where justified.
+- Existing Student identity and history remain unchanged.
+- No Guardian can remove another Guardian's account or relationship without explicit authorized policy.
+
+For account-management ownership, use the minimum safe model supported by the actual product design.
+
+If legal custodial authority, primary guardian status or dispute resolution would require policy decisions not yet made, do not invent those rules. Report them as deferred governance requirements.
+
+### G. Guardian APIs and RBAC
+
+Implement API operations for:
+- Guardian registration.
+- Guardian authenticated profile.
+- Family Workspace creation and listing.
+- Guardian Family Workspace details.
+- Student creation inside a Family Workspace.
+- Guardian-linked Student list.
+- Guardian–Student link status.
+- Secure claim of an existing Student invitation.
+- Guardian link revocation where authorized.
+- Guardian invitation of another Guardian, if safely supported.
+
+Use exact typed DTOs and Zod validation.
+
+Authorization must be enforced in backend services and repository queries, not only by frontend route guards.
+
+A Guardian must never gain access to:
+- `/admin/*`.
+- Teacher management endpoints.
+- Other Guardians' accounts.
+- Unlinked Student accounts.
+- Individual attempt records.
+- Individual turns.
+- Teacher observations.
+- Emotion selections.
+- Body Map or Intensity responses.
+- AAC communications.
+
+Do not implement a broad generic endpoint returning the full Student profile to Guardians.
+
+### H. Teacher/School invitation surface
+
+If required for linking existing School Students, implement only the smallest Teacher/Admin UI necessary to:
+- Generate a Guardian invitation for a Student the operator is authorized to manage.
+- Display invitation expiry and status.
+- Revoke an invitation.
+- Show whether the Guardian link is claimed.
+
+Do not expose Guardian private information unnecessarily.
+
+Do not allow Teachers to see Guardian passwords, email verification secrets or other account credentials.
+
+### I. Guardian Portal foundation
+
+Build a separate responsive Guardian portal using the P3-01 design system.
+
+Pages:
+- Guardian registration.
+- Guardian login.
+- Verification-required state.
+- Family Workspace overview.
+- Add Student.
+- Linked Student list.
+- Secure existing-Student linking.
+- Guardian account settings.
+- Link/invitation status.
+
+The linked Student list may display only safe account information:
+- Student display name.
+- Student account status.
+- Workspace relationship status.
+
+Do not display learning answers, emotion choices, attempt transcripts, private observations or learning progress in P4-01.
+
+Guardian Progress UI belongs to P4-03.
+
+Design the interface to feel warm, trustworthy and accessible, not like the Admin portal.
+
+### J. Localization and accessibility
+
+- Vietnamese-first.
+- Preserve English catalog structure.
+- Accessible forms and dialogs.
+- Visible focus.
+- Keyboard navigation.
+- Responsive mobile layout.
+- Clear verification and invitation status.
+- Do not use shame or diagnostic terminology.
+- Never present accessibility preferences as weaknesses.
+
+### K. Tests and migrations
+
+Create all required:
+- Drizzle schema changes.
+- SQL migration files.
+- Zod schemas.
+- Backend services and routes.
+- Authorization tests.
+- Repository tests.
+- Frontend tests.
+- Migration documentation.
+
+P4-01 explicitly authorizes writing the migration artifacts needed for this new feature.
+
+However:
+- Create migration files only.
+- Do NOT execute migrations.
+- Do NOT run seeds.
+- Do NOT write to TiDB.
+- Do NOT run live DML.
+- Do NOT alter existing records.
+
+Include migration order, rollback considerations and backward-compatibility analysis in the final report.
+
+## 5. Explicit Boundaries
+
+- Do NOT implement payment providers, subscriptions or invoices.
+- Do NOT implement Guardian Progress API or learning-progress dashboards.
+- Do NOT expose Student answers or learning turns to Guardian.
+- Do NOT expose emotion selections or AAC communications to Guardian.
+- Do NOT expose private Teacher observations.
+- Do NOT create duplicate Student accounts when linking existing Students.
+- Do NOT allow Student self-registration in this task.
+- Do NOT require Teacher or class membership for a Family Student.
+- Do NOT create `parent` and `guardian` as separate roles; use the approved `guardian` role.
+- Do NOT merge Guardian and Student identities.
+- Do NOT weaken existing Admin/Teacher/Student authorization.
+- Do NOT modify existing learning attempt payload semantics.
+- Do NOT modify existing assignment behavior unless strictly required for Guardian account creation; report other gaps for P4-02.
+- Do NOT make Guardian a Teacher or Admin.
+- Do NOT auto-verify Guardian identity.
+- Do NOT expose invitation or verification secrets.
+- Do NOT collect diagnosis or unnecessary child data.
+- Do NOT delete existing accounts or memberships.
+- Do NOT perform live database writes.
+- Do NOT execute migrations.
+- Do NOT run seeds.
+- Do NOT make unsupported claims about legal consent compliance.
+- Do NOT add unrelated infrastructure or packages without justification.
+- Do NOT commit or push Git changes.
+- Do NOT cold-restart or delete the workspace.
+
+If a core architectural decision would risk duplicating Student identities or breaking existing School memberships, stop before the destructive or incompatible change and report the exact blocker.
+
+## 6. Acceptance Criteria
+
+P4-01 is PASS only when:
+
+### Guardian identity
+- Guardian is a distinct authenticated role.
+- Guardian registration is separate from Student registration.
+- Guardian verification is enforced before child management.
+- Guardian can log in and restore sessions.
+- Existing Admin/Teacher/Student authentication continues working.
+- Guardian cannot impersonate another role.
+
+### Family Workspace
+- A verified Guardian can create a Family Workspace.
+- Guardian can access only authorized workspaces.
+- One workspace can support multiple Students.
+- Multiple Guardians can be associated safely where supported.
+- Family Workspace does not inherit School or Teacher privileges.
+
+### Student identity
+- Guardian can create a Student without a Teacher or School.
+- Student can log in independently.
+- Student has one canonical user identity.
+- Existing Student accounts remain valid.
+- Student can participate in both family and school contexts without duplicate user records.
+- Existing assignments, attempts and turns remain attached to the same Student user identity.
+
+### Secure linking
+- Guardian can claim a valid invitation for an existing Student.
+- Linking does not create a new Student.
+- Invalid, expired, revoked and reused tokens fail safely.
+- Unauthorized Teachers cannot generate invitations for unrelated Students.
+- Guardian cannot discover Student accounts by name or username alone.
+- Multiple Guardians can be linked independently.
+- Revoking one link does not damage other links or Student data.
+
+### Privacy
+- Guardian cannot retrieve answers or turns.
+- Guardian cannot retrieve emotion selections.
+- Guardian cannot retrieve Body Map or Intensity responses.
+- Guardian cannot retrieve Strategy choices or AAC communications.
+- Guardian cannot retrieve private Teacher observations.
+- Guardian cannot access unlinked Students.
+- Guardian cannot access Admin or Teacher functionality.
+
+### Frontend
+- Guardian registration/login works with actual backend contracts.
+- Guardian portal renders correctly.
+- Family Workspace management uses actual backend data.
+- Student creation and invitation claiming provide honest success/failure states.
+- No fake data is presented as real.
+
+### Regression
+- Existing P1/P2/P3 backend and frontend tests remain passing.
+- TypeScript passes.
+- Production build passes.
+- New Guardian tests pass.
+- Database health remains healthy.
+- No migration is executed.
+- No live database mutation occurs.
+
+Use `PASS`, `FAIL` and `NOT RUN` honestly.
+
+A missing email provider, browser, live Guardian credentials or disposable test database must be reported as `NOT RUN` or a clearly identified operational dependency. Do not fake successful verification.
+
+## 7. Evidence & Report
+
+Return:
+
+1. Overall verdict: `PASS`, `PARTIAL` or `FAIL`.
+2. Architecture decision report.
+3. Verified existing identity and membership model.
+4. Chosen Family Workspace representation and rationale.
+5. Guardian role and authentication implementation.
+6. Guardian verification implementation and mail-provider status.
+7. New and modified database schema files.
+8. Migration SQL files created, without execution.
+9. Guardian–Student relationship model.
+10. Multi-Guardian and multi-Student behavior.
+11. Existing Student linking/invitation flow.
+12. Student creation without Teacher or School.
+13. API endpoint and DTO inventory.
+14. RBAC/privacy test results.
+15. Teacher/Admin invitation UI results, if implemented.
+16. Guardian frontend pages and screenshots where available.
+17. TypeScript, build and regression suite results.
+18. Database health and confirmation that no DML/migration was executed.
+19. Backward-compatibility assessment for existing P1–P3 data.
+20. Missing email provider or other operational dependencies.
+21. Deferred legal/governance decisions.
+22. Exact remaining work for P4-02 and P4-03.
+
+Clearly distinguish:
+- Unit tests.
+- Mock API tests.
+- Live read-only tests.
+- Live authenticated tests.
+- Browser visual tests.
+- NOT RUN.
+
+Do not claim a real Guardian registration or Student linking flow passed unless it was actually performed.
+
+## 8. Stop Condition
+
+Implement P4-01 only.
+
+Do not implement payment or subscription functionality.
+
+Do not implement Guardian learning-progress dashboards.
+
+Do not expose private Student learning data.
+
+Do not execute database migrations or write to TiDB.
+
+Preserve all existing P1–P3 behavior and data.
+
+Stop after implementation, testing, migration review and reporting.
+
+Wait for Technical Lead review before starting P4-02.

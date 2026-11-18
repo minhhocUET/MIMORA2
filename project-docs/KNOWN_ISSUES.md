@@ -54,16 +54,16 @@ Mọi vấn đề kỹ thuật, giới hạn môi trường và hạng mục ch�
 
 ---
 
-## KI-06 — Hoàn tất Migration 22 bảng (`test`), còn mở kiểm thử DML / Parity & Dọn `TIDB_MIGRATOR_*` Secrets
-- **Trạng thái:** OPEN *(Partially Resolved — Migration `P1-03B2B` `PASS` & Runtime Connectivity `P1-03B2C` `PASS`; giữ OPEN đến khi hoàn tất integration tests và xóa `TIDB_MIGRATOR_*` khỏi AI Studio Secrets)*
+## KI-06 — Hoàn tất Kiểm thử DML & Parity 22 bảng (`test`), còn mở Dọn `TIDB_MIGRATOR_*` Secrets bởi Operator
+- **Trạng thái:** OPEN *(DML, Composite FKs, Virtual Unique Guards & 22-Table Parity `VERIFIED` trong `P2-03`..`P2-07`; giữ OPEN duy nhất cho bước operator xóa `TIDB_MIGRATOR_*` khỏi AI Studio Secrets)*
 - **Mức độ:** MEDIUM
-- **Mô tả:** Migration `drizzle/0000_mimora_mvp_init.sql` (SHA-256 `eec9f4669bf5f7850eb2cf5ca7f975585609334722e44ee4b5339ada2a16c765`) đã được thực thi thành công bên ngoài lên TiDB Cloud Serverless `test` (`P1-03B2B`: `23` base tables gồm `22` bảng ứng dụng + `__drizzle_migrations`, `51` foreign keys, `5` virtual generated columns), và runtime (`P1-03B2C`) đã xác minh `GET /api/v1/db/health` HTTP `200`, `TLSv1.3` (`TLS_AES_128_GCM_SHA256`), tài khoản `3rtMqHg6yoxMH5d.mimora_runtime@%` chỉ có `SELECT, INSERT, UPDATE, DELETE` trên `test.*` và `SELECT COUNT(*) FROM users = 0`. Tuy nhiên vẫn còn mở các hạng mục chưa kiểm chứng/chưa dọn dẹp:
-  1. Chưa kiểm thử thực tế DML (`INSERT`/`UPDATE`/`DELETE`) của runtime account trên dữ liệu thật.
-  2. Chưa kiểm thử chặn sai tham chiếu qua 29 composite FKs (`T-CONC-01..03`, `T-OBS-01..04`).
-  3. Chưa kiểm thử runtime hành vi 3 virtual generated-column unique guards và chưa đối chiếu đầy đủ `SHOW CREATE TABLE` parity cho toàn bộ 22 bảng.
-  4. `TIDB_MIGRATOR_USER` và `TIDB_MIGRATOR_PASSWORD` hiện vẫn còn trong Google AI Studio Secrets (được `control-plane-api` truyền vào môi trường tiến trình `server.ts`, dù code ứng dụng không đọc).
-- **Ảnh hưởng:** Rủi ro runtime còn phụ thuộc vào việc bảo vệ lớp kiểm thử tích hợp sắp tới và phạm vi cô lập Secrets của container web app.
-- **Cách xác minh / Điều kiện đóng:** (1) Operator xóa thủ công `TIDB_MIGRATOR_USER` và `TIDB_MIGRATOR_PASSWORD` khỏi Google AI Studio Secrets và restart toàn workspace; (2) Chạy bộ backend integration tests kiểm chứng DML, composite FKs, virtual unique guards và đối chiếu `SHOW CREATE TABLE` parity cho 22 bảng.
+- **Mô tả:** Migration `drizzle/0000_mimora_mvp_init.sql` (SHA-256 `eec9f4669bf5f7850eb2cf5ca7f975585609334722e44ee4b5339ada2a16c765`) đã được thực thi thành công lên TiDB `test` (`P1-03B2B` `PASS`), kết nối runtime least-privilege đã xác minh (`P1-03B2C` `PASS`), và trong các task `P2-03`..`P2-07` các hạng mục kiểm chứng DB runtime đã hoàn tất:
+  1. **DML runtime account (`VERIFIED`):** Xác minh `INSERT`/`UPDATE`/`DELETE` sạch (0 tồn dư) trên toàn bộ các bảng nghiệp vụ từ `organizations`/`users`/`sessions`/`classes` tới `content_*`, `assignments`/`activity_attempts`, `teacher_observations`, `student_profiles`, `student_goals`, `org_insight_daily_snapshots`.
+  2. **Composite FKs & `T-CONC-01..03`, `T-OBS-01..04` (`VERIFIED`):** Xác minh trên TiDB thật (`p206test-97368327`, `p207test-42cc2722`), bao gồm chặn lỗi SQL trực tiếp `fk_obs_attempt_assignment` (`ER_NO_REFERENCED_ROW_2` / `errno 1452`).
+  3. **Virtual Unique Guards & `SHOW CREATE TABLE` 22-table Parity (`VERIFIED`):** Xác minh `uq_attempts_single_in_progress`, `uq_approvals_single_pending`, `uq_class_enrollments_active_pair`, và đối chiếu read-only `SHOW CREATE TABLE` trên cả `22/22` bảng ứng dụng (`p207test-42cc2722`, `all22TablesVerified=true`, `allColumnsMatched=true`, `allConstraintsMatched=true`).
+  4. **Còn mở (Operator action):** `TIDB_MIGRATOR_USER` và `TIDB_MIGRATOR_PASSWORD` nếu còn trong Google AI Studio Secrets vẫn cần operator xóa thủ công qua AI Studio UI kèm restart workspace.
+- **Ảnh hưởng:** Rủi ro DML/parity DB đã được loại trừ; chỉ còn rủi ro cô lập Secrets phía cấu hình container nếu `TIDB_MIGRATOR_*` chưa được gỡ khỏi Secrets UI.
+- **Cách xác minh / Điều kiện đóng:** Operator xác nhận đã xóa `TIDB_MIGRATOR_USER` và `TIDB_MIGRATOR_PASSWORD` khỏi Google AI Studio Secrets và restart toàn workspace.
 
 ---
 
@@ -89,12 +89,12 @@ Mọi vấn đề kỹ thuật, giới hạn môi trường và hạng mục ch�
 
 ---
 
-## KI-09 — TiDB `tidb_enable_check_constraint` xác nhận `OFF` & Còn mở kiểm thử Runtime Constraints / Parity
-- **Trạng thái:** OPEN *(`DDL EXECUTED IN P1-03B2B — RUNTIME CONSTRAINT ENFORCEMENT & PARITY TESTS PENDING`)*
+## KI-09 — TiDB `tidb_enable_check_constraint` xác nhận `OFF` (Runtime Constraints & Parity Đã Xác Minh)
+- **Trạng thái:** OPEN *(Structural TiDB Behavior — `CHECK` constraint không được thực thi ở tầng DB; Runtime Unique Guards, Composite FKs & 22-Table Parity đã xác minh `PASS` trong `P2-03`..`P2-07`)*
 - **Mức độ:** MEDIUM
-- **Mô tả:** Đã xác nhận `tidb_enable_foreign_key = ON`, `foreign_key_checks = ON`, `tidb_enable_check_constraint = OFF`, `tidb_enable_clustered_index = ON`, hỗ trợ `utf8mb4_0900_ai_ci`, và migration `drizzle/0000_mimora_mvp_init.sql` (`23` base tables, `51` FKs, `5` virtual generated columns) đã thực thi thành công lên `test` (`P1-03B2B` `PASS`). Tuy nhiên, do `tidb_enable_check_constraint = OFF` và chưa chạy integration tests DML, việc thực thi runtime đối với 3 virtual generated-column unique guards, composite FKs, và đối chiếu chi tiết `SHOW CREATE TABLE` parity trên cả 22 bảng vẫn chưa được kiểm chứng bằng test tự động.
-- **Ảnh hưởng:** Không thể dựa vào `CHECK` constraint ở tầng DB; cần integration tests thực tế chứng minh hành vi unique guards và FK rejection ở tầng runtime.
-- **Cách xác minh / Điều kiện đóng:** Luôn validate enum/domain constraints bằng `zod` + service layer, và chạy kiểm thử tích hợp xác minh 3 virtual unique guards, composite FKs cùng `SHOW CREATE TABLE` parity cho 22 bảng.
+- **Mô tả:** Đã xác nhận `tidb_enable_foreign_key = ON`, `foreign_key_checks = ON`, `tidb_enable_check_constraint = OFF`, `tidb_enable_clustered_index = ON`, hỗ trợ `utf8mb4_0900_ai_ci`, và trong `P2-03`..`P2-07` đã xác minh thực tế trên TiDB `test` toàn bộ 3 virtual generated-column unique guards, composite FKs (`T-CONC-01..03`, `T-OBS-01..04`), cùng 22/22 `SHOW CREATE TABLE` parity (`p207test-42cc2722`). Tuy nhiên `tidb_enable_check_constraint` vẫn là `OFF` trên cluster.
+- **Ảnh hưởng:** Không thể dựa vào `CHECK` constraint ở tầng DB nếu có thao tác ghi ngoài tầng ứng dụng; toàn bộ enum/domain constraints bắt buộc phải được validate ở tầng `zod` + service layer.
+- **Cách xác minh / Điều kiện đóng:** Duy trì kiểm tra enum/domain/an toàn bằng `zod` + service layer trong mọi endpoint mới; issue này giữ OPEN như ràng buộc vận hành trừ khi cluster TiDB bật `tidb_enable_check_constraint = ON`.
 
 ---
 

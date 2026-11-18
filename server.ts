@@ -12,12 +12,15 @@ import {
   getRequestId,
 } from './src/server/http/middleware.ts';
 import { createAdminContentRouter } from './src/server/routes/admin-content.routes.ts';
+import { createAdminInsightsRouter } from './src/server/routes/admin-insights.routes.ts';
 import { createAdminUsersRouter } from './src/server/routes/admin-users.routes.ts';
 import { createAssignmentsRouters } from './src/server/routes/assignments.routes.ts';
 import { createAttemptsRouters } from './src/server/routes/attempts.routes.ts';
 import { createAuthRouter } from './src/server/routes/auth.routes.ts';
 import { createClassesRouters } from './src/server/routes/classes.routes.ts';
+import { createGoalsRouters } from './src/server/routes/goals.routes.ts';
 import { createLibraryRouter } from './src/server/routes/library.routes.ts';
+import { createObservationsRouter } from './src/server/routes/observations.routes.ts';
 import { createAdminOrganizationsRouter } from './src/server/routes/organizations.routes.ts';
 
 function parseCliArgs(argv: string[]): { port?: number; host?: string } {
@@ -188,7 +191,10 @@ async function startServer() {
     createAssignmentsRouters();
   const { studentAttemptsRouter, teacherAssignmentAttemptsRouter } =
     createAttemptsRouters();
+  const { teacherStudentGoalsRouter, teacherGoalsRouter, studentGoalsRouter } =
+    createGoalsRouters();
   app.use('/api/v1/admin/organizations/:orgId/classes', adminClassesRouter);
+  app.use('/api/v1/admin/insights', createAdminInsightsRouter());
   app.use('/api/v1/admin', createAdminUsersRouter());
   app.use('/api/v1/admin', createAdminContentRouter());
   app.use('/api/v1/admin/organizations', createAdminOrganizationsRouter());
@@ -196,7 +202,11 @@ async function startServer() {
   app.use('/api/v1/library', createLibraryRouter());
   app.use('/api/v1/assignments', teacherAssignmentsRouter);
   app.use('/api/v1/assignments', teacherAssignmentAttemptsRouter);
+  app.use('/api/v1/observations', createObservationsRouter());
+  app.use('/api/v1/students', teacherStudentGoalsRouter);
+  app.use('/api/v1/goals', teacherGoalsRouter);
   app.use('/api/v1/student/assignments', studentAssignmentsRouter);
+  app.use('/api/v1/student', studentGoalsRouter);
   app.use('/api/v1/student', studentAttemptsRouter);
 
   app.use('/api', apiNotFoundHandler);

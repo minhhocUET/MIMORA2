@@ -1,6 +1,6 @@
 {
-  "name": "",
-  "description": "",
+  "name": "MIMORA",
+  "description": "Nền tảng học tập cảm xúc - xã hội (SEL) an toàn, tiếp cận và thân thiện dành cho học sinh, giáo viên và quản trị viên.",
   "requestFramePermissions": [],
   "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
 }

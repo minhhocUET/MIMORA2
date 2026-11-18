@@ -1,0 +1,822 @@
+# MIMORA — P3-03: Student Learning Experience & Chapter-Based Learning Workspace
+
+## 1. Role
+
+Act as a Senior Frontend Architect, Children's Educational UX Designer, Accessibility Engineer, and Learning Interaction Developer.
+
+Continue the existing MIMORA project.
+
+Your responsibility is to build the actual Student Learning Experience on top of the completed P1, P2, P3-01 and P3-02 implementations.
+
+This is not a static prototype.
+
+Build a real, persistent, child-friendly learning experience using the existing Student authentication, assignments, published content versions, learning attempts and turns APIs.
+
+Prioritize:
+- Child autonomy and emotional safety.
+- Visual-first interaction.
+- Clear, predictable navigation.
+- AAC and alternative communication.
+- Genuine persistence and resumability.
+- Accessibility and responsive behavior.
+- Strict use of backend authorization and content contracts.
+
+## 2. Context & Goal
+
+### Current implementation status
+
+P1 — Platform Foundation: CLOSED.
+
+P2 — Backend Core: CLOSED.
+- P2-01 Core Backend Foundation.
+- P2-02 Authentication and Sessions.
+- P2-03 Organizations, Users and Classes.
+- P2-04 Content Library and Versioning.
+- P2-05 Assignments.
+- P2-06 Learning Attempts and Turns.
+- P2-07 Profiles, Goals, Private Observations and Admin Insights.
+
+P3-01:
+- MIMORA design system.
+- Reusable accessible UI components.
+- Vietnamese-first localization.
+- Authentication and session restoration.
+- StudentLayout.
+- Original illustrations and SEL component previews.
+
+P3-02:
+- Admin portal.
+- Teacher portal.
+- Content authoring and publishing.
+- Assignment creation and management.
+- Student support profiles and goals.
+- Teacher private observations.
+
+P3-02 has been accepted for continued development. Multi-role browser verification remains scheduled for P3-04.
+
+### Student role
+
+The only Student role is:
+
+`student`
+
+Students may:
+- View their own profile and supported preferences.
+- View their own assignments.
+- Open their assigned content.
+- Start, resume, retry and complete their own learning attempts using authorized backend APIs.
+- View their own supported progress.
+- Use accessibility and communication features.
+
+Students must never access other students' data.
+
+### Product Proposal V1.0
+
+The product includes:
+
+**16 Emotion Cards**
+- 8 basic.
+- 8 extended.
+- Existing content type: `emotion_card`.
+
+**21 Strategy Cards**
+- Seven groups.
+- Three cards per group.
+- Existing content type: `action_card`.
+
+**Other resources**
+- Situation cards: `situation_card`.
+- Social story scenes: `social_story_card`.
+- Communication Board/AAC: `communication_card`.
+- Body Map.
+- Intensity Scale.
+
+These are existing product targets. Do not assume all resources have already been authored or published.
+
+### Chapter 1
+
+Title:
+
+"Khi bạn lấy món đồ chơi con đang sử dụng"
+
+The proposal describes a five-scene illustrated story about a child using a toy when another child takes it.
+
+The situation can have different contextual variants:
+- The other child takes the toy without noticing the first child is using it.
+- The other child wants to borrow the toy but does not ask first.
+- The other child continues taking the toy after being told to stop.
+
+Do not force the assumption that every situation has the same intention or solution.
+
+### Learning structure
+
+One Chapter assignment may contain six ordered assignment items.
+
+Display them as three sessions with two steps each:
+
+**Session 1**
+1. Observe situation and possible character emotions.
+2. Explore optional body signals.
+
+**Session 2**
+3. Explore intensity.
+4. Explore supportive/regulation strategies.
+
+**Session 3**
+5. Distinguish observable facts from interpretations or guesses.
+6. Explore respectful social problem-solving and communication.
+
+This grouping is a frontend presentation structure. It does not require a separate database Session entity.
+
+### Core product philosophy
+
+MIMORA helps children explore emotions, communication and social situations.
+
+MIMORA does not diagnose, score, rank or psychologically profile children.
+
+A child's choice is an expression or response in a particular context, not a universal psychological truth.
+
+The child must always have meaningful control over participation.
+
+### Goal of P3-03
+
+Implement:
+1. Student home and assignment discovery.
+2. Assignment detail and Chapter entry.
+3. A persistent Chapter learning workspace.
+4. Three sessions and six steps.
+5. Five-scene social story presentation.
+6. Emotion card exploration.
+7. Optional Body Map interaction.
+8. Optional Intensity Scale interaction.
+9. Strategy Card exploration.
+10. Fact vs Guess interaction.
+11. Communication Board/AAC.
+12. Safe attempt start, resume, retry, save and completion.
+13. Student's own learning history/progress where supported.
+14. Accessibility, responsive behavior and child-friendly visual polish.
+
+## 3. Inspect First
+
+Before editing, inspect the actual frontend and backend code.
+
+Do not invent endpoints, request properties or payload formats.
+
+### A. Existing frontend foundation
+
+Inspect:
+- `src/App.tsx`
+- `src/auth/AuthContext.tsx`
+- `src/api/client.ts`
+- `src/api/admin.ts`
+- `src/api/teacher.ts`
+- `src/types/auth.ts`
+- `src/types/chapter.ts`
+- `src/design-system/tokens.ts`
+- `src/components/ui/`
+- `src/components/illustrations/`
+- `src/components/sel-preview/`
+- `src/layouts/StudentLayout.tsx`
+- `src/i18n/`
+- Existing P3-01 and P3-02 frontend tests.
+
+Preserve the current architecture and reuse existing shared components.
+
+### B. Student assignment APIs
+
+Inspect the exact P2-05 routes and DTOs for:
+- Student own assignment list.
+- Student assignment detail.
+- Target eligibility.
+- Assignment item ordering.
+- Pinned content version references.
+- Home-practice instructions where visible to Students.
+- Any supported assignment status/progress fields.
+
+Verify that Students can only retrieve their own assignments.
+
+### C. Published content access
+
+Inspect the actual Student-accessible content retrieval mechanism.
+
+Determine how the assignment's pinned content versions are resolved.
+
+Requirements:
+- Display the exact content versions pinned by the assignment.
+- Do not replace them with newer versions merely because the underlying content item has been edited.
+- Respect the existing publication and access controls.
+- Do not expose drafts, pending-review versions or unpublished content.
+- Handle missing or unavailable versions honestly.
+
+Inspect actual payloads for:
+- `emotion_card`.
+- `situation_card`.
+- `action_card`.
+- `social_story_card`.
+- `communication_card`.
+
+Record the exact payload fields for rendering.
+
+### D. Learning attempt APIs
+
+Inspect the exact P2-06 implementation:
+- Start attempt.
+- Resume active attempt.
+- List/view own attempts if supported.
+- Explicit retry.
+- Append turn.
+- Turn idempotency.
+- Complete attempt.
+- Deliberately abandon attempt.
+- Assignment progress updates.
+- Attempt states and response envelopes.
+- Turn payload validation.
+- Support context fields.
+- Error codes and authorization checks.
+
+Identify:
+- Required client request headers.
+- CSRF requirements.
+- Required idempotency behavior.
+- Exact order and format for appending turns.
+- How a saved attempt is identified after navigation or re-login.
+- Whether attempt detail returns previous turns.
+
+Do not assume a browser-side local state update has been saved on the server.
+
+### E. Profile and accessibility preferences
+
+Inspect actual Student-accessible profile/support-preference endpoints.
+
+Use exact supported fields only.
+
+P3-02 reports the current `STUDENT_SUPPORT_PREFERENCES_SCHEMA` supports:
+- `preferredCommunicationMode`
+- `aacEnabled`
+- `readAloudEnabled`
+- `speechRate`
+- `visualContrast`
+- `reducedMotion`
+- `preferredVisualCues`
+- `sensoryNotes`
+
+Verify these values against the current source before use.
+
+Do not add `fontScale` or `preferredLocale` to backend payloads unless the actual current schema supports them.
+
+### F. Chapter metadata compatibility
+
+Inspect:
+- `src/types/chapter.ts`.
+- `mapContentVersionToUiDescriptor`.
+- P2-04 `CONTENT_METADATA_SCHEMA`.
+- P2-04 `payloadJson` validators.
+- Current P3-02 ContentPayloadEditor.
+- Actual Chapter metadata conventions.
+
+P3-01 reports the current compatibility mechanism uses `metadataJson.selThemes` tags:
+- `chapter:<key>`
+- `session:<1|2|3>`
+- `step:<1..6>`
+
+Verify the exact implementation before reusing it.
+
+The content metadata schema currently uses strict Zod validation.
+
+Do not silently invent new metadata properties.
+
+If explicitly typed fields such as `chapterKey`, `sessionNumber`, `stepNumber`, `stepComponentType`, `emotionTier` or `strategyCategory` are necessary, stop and report:
+- The exact limitation.
+- The smallest proposed Zod-only change.
+- Whether backward compatibility is preserved.
+- Whether SQL migration is unnecessary because the underlying column is already JSON.
+
+Do not modify backend schemas in this task without separate authorization.
+
+### G. Learning diary compatibility
+
+The Product Proposal describes a Chapter diary containing:
+- Context.
+- Observed events.
+- Emotion/body signals, if shared.
+- Strategies explored or tried.
+- What felt useful, if the child chooses to share.
+- Communication and adult support.
+- Environmental factors.
+- Next steps.
+- "No opportunity observed" where appropriate.
+
+Inspect whether existing attempts and turns can safely represent and retrieve these elements.
+
+Do not silently squeeze a large diary structure into an arbitrary JSON payload.
+
+Report gaps if the existing turn schema cannot support a structured diary safely.
+
+## 4. Authorized Scope
+
+### A. Student home
+
+Transform the existing StudentLayout into a welcoming learning home.
+
+Display:
+- Friendly MIMORA welcome.
+- The student's own available assignments.
+- Clear learning activity cards.
+- Current attempt/resume states where provided by backend.
+- Completed work history only where the backend supports it.
+- Entry to the student's own learning workspace.
+- Accessibility and communication settings.
+
+Use actual backend data.
+
+Do not fabricate assignments, progress, achievements or records.
+
+When no assignments exist, present a kind, encouraging empty state.
+
+Never make the Student landing page resemble a performance dashboard.
+
+### B. Assignment list and detail
+
+Implement:
+- Own assignment listing.
+- Assignment details.
+- Assignment title and teacher-provided instructions.
+- Pinned content items.
+- Informational due date, where provided.
+- Home-practice guidance if provided.
+- Current attempt state.
+- Start or resume action.
+- Explicit retry action where allowed.
+
+Do not expose creator-only administrative actions.
+
+Do not allow the Student to change assignment targets, pinned versions or due dates.
+
+### C. Chapter learning workspace
+
+Build a dedicated learning workspace for Chapter-based assignments.
+
+Use the existing assignment data to determine:
+- Chapter identity.
+- Ordered items.
+- Exact pinned content versions.
+- Available activity types.
+- Session grouping.
+
+Represent the six steps in three visually distinct but connected sessions.
+
+Provide:
+- Clear step title and short instruction.
+- Friendly navigation.
+- Visible current position.
+- Ability to revisit already available content when allowed by backend behavior.
+- A consistent place for help, stop, skip and communication controls.
+- Responsive layout for tablets, laptops and mobile devices.
+
+Do not force a timer or a completion countdown.
+
+Do not pressure children with streaks, stars, rankings or progress percentages.
+
+### D. Five-scene social story
+
+Implement a visual story viewer for the five Chapter 1 scenes.
+
+Requirements:
+- Use actual published `social_story_card` content.
+- Preserve verified scene ordering.
+- Support accessible image descriptions when metadata exists.
+- Display story text in readable, concise blocks.
+- Allow previous/next scene navigation.
+- Respect reduced motion.
+- Provide a pause/exit route.
+- Avoid autoplay narration.
+
+Do not fabricate missing scenes or mark incomplete placeholder material as published content.
+
+If the required content does not exist, display an explicit unavailable-content state and report which content is missing.
+
+Do not turn one character's facial expression into the only accepted interpretation of their emotion.
+
+### E. Step 1 — Situation and Emotion Exploration
+
+Use actual `social_story_card`, `situation_card` and `emotion_card` content as appropriate.
+
+Allow children to:
+- Observe the scene.
+- Explore several possible emotions.
+- Select more than one option if the activity format allows.
+- Say "Con không chắc".
+- Say "Con không muốn trả lời".
+- Skip or ask for help.
+
+Do not require the Student to disclose a personal emotion.
+
+Do not mark one emotion as universally correct.
+
+Distinguish:
+- What the story shows.
+- What the child thinks the character might feel.
+
+Never infer the Student's feelings from card selection.
+
+### F. Step 2 — Optional Body Map
+
+Build a simple, friendly, non-clinical Body Map component.
+
+Requirements:
+- Original illustration or simple vector silhouette.
+- Large selectable body regions.
+- Optional non-verbal interaction.
+- Allow "Không muốn chia sẻ".
+- Allow "Không biết".
+- Allow no selection.
+- Do not force naming a body sensation.
+- Do not infer psychological or medical meaning from selected regions.
+
+The Body Map is a learning aid, not a medical assessment.
+
+Persist interaction only through the verified P2-06 turn payload contract.
+
+If the existing payload cannot safely represent the selection, do not invent a request property or pretend the response was saved.
+
+### G. Step 3 — Intensity Scale
+
+Build a gentle visual intensity exploration tool.
+
+Requirements:
+- Use clear visual levels and child-friendly language.
+- Avoid presenting levels as a standardized psychological or medical measurement.
+- Allow the child to select or skip.
+- Use the actual Chapter activity format where content provides one.
+- Do not require a number.
+- Do not interpret a selected level as a diagnosis or behavioral risk score.
+
+Do not persist unsupported fields.
+
+### H. Step 4 — Strategy Card Exploration
+
+Use actual published `action_card` content.
+
+Requirements:
+- Display the available strategies in a friendly card grid or accessible list.
+- Group cards by verified strategy categories when supported by metadata.
+- Provide clear titles and instructions.
+- Support read-aloud when available.
+- Support AAC-compatible choices.
+- Allow several possible choices where the payload permits.
+- Allow "Con muốn thử cách khác".
+- Allow "Con muốn nhờ người lớn giúp".
+
+Do not rank children by strategy selection.
+
+Do not claim that one strategy works for every child.
+
+Do not recommend strategies based on inferred emotional states.
+
+Do not prioritize historical usefulness until the backend has an approved, structured data model for that purpose.
+
+### I. Step 5 — Facts vs Guesses
+
+Build an accessible fact-vs-guess exploration component.
+
+Use verified `situation_card` or other existing content when suitable.
+
+Distinguish:
+- Facts: things directly observable in the story.
+- Guesses: possible intentions, explanations or thoughts that are not confirmed.
+
+Provide:
+- Visual sorting or selection.
+- Text alternatives.
+- Read-aloud where supported.
+- "Con chưa biết" and skip options.
+- Gentle feedback that does not shame wrong or unexpected choices.
+
+Do not assert an uncertain character intention as fact.
+
+Do not create a single universal explanation for why a character took the toy.
+
+### J. Step 6 — Social Problem-Solving and Communication Board
+
+Build a flexible communication activity using actual `communication_card` and `action_card` content.
+
+Allow the child to:
+- Express a need.
+- Ask for help.
+- Say stop.
+- Set a boundary.
+- Ask to borrow or take turns.
+- Indicate discomfort.
+- Choose another communication option.
+- Decline to answer.
+
+Support:
+- Text labels.
+- Visual symbols when available.
+- Large touch-friendly controls.
+- AAC-compatible navigation.
+- User-initiated read-aloud.
+- Keyboard and assistive-technology access.
+
+Do not require speech, eye contact, sharing or emotional disclosure.
+
+Do not assume every child uses the same communication method.
+
+An adult-support option must always be available.
+
+### K. Attempt persistence and lifecycle
+
+Integrate with the exact P2-06 attempt APIs.
+
+Expected flow:
+
+1. Student opens an eligible assignment.
+2. Load existing attempt state.
+3. If an active attempt exists, offer resume.
+4. Otherwise, start the attempt through the backend.
+5. Render the appropriate learning workspace.
+6. Append turns using the actual backend payload contract.
+7. Restore prior turns when resuming.
+8. Handle explicit retry by creating the new attempt through the backend.
+9. Complete only through the explicit completion action.
+10. Allow deliberate abandonment only through an explicit child-facing action and verified backend endpoint.
+
+Critical rules:
+- Do not automatically abandon on logout.
+- Do not automatically abandon on navigation.
+- Do not automatically abandon on browser refresh.
+- Do not automatically abandon after a session expires.
+- Do not mark an attempt complete just because the last UI step was displayed.
+- Do not mark an answer as saved until the backend confirms persistence.
+- Handle duplicate submissions using verified idempotency behavior.
+- Prevent accidental duplicate turns during retries.
+- Do not lose the identity of an active attempt when navigating within the workspace.
+
+When network errors occur:
+- Preserve the current unsaved interaction in memory while the screen remains active.
+- Clearly show unsaved/saving/saved states.
+- Allow a safe retry.
+- Never silently claim successful persistence.
+- Do not store sensitive child answers or raw authentication tokens in localStorage/sessionStorage as a workaround.
+
+### L. Progress and learning history
+
+Display only information supported by the actual Student API.
+
+Possible descriptive states:
+- Not started.
+- In progress.
+- Completed.
+- Deliberately abandoned, if returned by the backend.
+
+Keep the distinction between:
+- Assignment/attempt status.
+- Child's individual SEL development.
+
+Do not display:
+- Psychological profiles.
+- Standardized SEL scores.
+- GAS scores.
+- Rankings.
+- Comparisons to other children.
+- Penalties for skipped or unanswered activities.
+- A claim that completion means the child has mastered an emotion or skill.
+
+If a meaningful Chapter diary can be derived from verified structured turns, provide a simple read-only personal history view.
+
+If no safe structured diary model exists:
+- Do not fabricate a journal.
+- Do not misrepresent the raw attempt transcript as a complete Chapter diary.
+- Report the exact missing capabilities for a separately approved future improvement.
+
+"No opportunity observed" must never be treated as failure or non-compliance.
+
+### M. Student accessibility controls
+
+Connect Student UI to the actual supported accessibility preferences.
+
+Support verified fields such as:
+- Preferred communication mode.
+- AAC enabled.
+- Read-aloud enabled.
+- Speech rate.
+- Visual contrast.
+- Reduced motion.
+- Preferred visual cues.
+- Sensory notes, if the Student is allowed to view them.
+
+The UI should honor settings without presenting them as weaknesses.
+
+#### Read-aloud
+
+Read-aloud must:
+- Be user initiated.
+- Never start automatically.
+- Have clear play/stop controls.
+- Respect speech-rate preference when technically supported.
+- Provide a visual text alternative.
+- Fail gracefully when browser support is absent.
+
+No voice recording or speech analysis.
+
+#### AAC
+
+AAC must:
+- Use actual communication card content where available.
+- Be easy to navigate using touch and keyboard.
+- Allow visual-first selection.
+- Not require speech output.
+- Not be treated as a diagnosis or performance indicator.
+
+### N. Visual design and user experience
+
+Reuse the P3-01 design system.
+
+Student experience must feel:
+- Warm.
+- Friendly.
+- Encouraging.
+- Playful without being overstimulating.
+- Predictable.
+- Respectful.
+- Inclusive.
+
+Use:
+- Soft cream, mint, peach, lavender and gentle accent colors.
+- Original friendly illustrations.
+- Rounded visual cards.
+- Large clear controls.
+- Readable Vietnamese typography.
+- Generous spacing.
+- Clear visual hierarchy.
+- Consistent interaction placement.
+
+Avoid:
+- Clinical or diagnostic-looking interfaces.
+- Dense text.
+- Excessive animation.
+- Excessively childish or patronizing language.
+- Competitive gamification.
+- Unnecessary visual clutter.
+
+Design for children with different communication and sensory preferences, without assuming every child has the same needs.
+
+### O. Localization and responsiveness
+
+- Vietnamese is the default locale.
+- Preserve the existing English catalog structure.
+- No broken Vietnamese diacritics.
+- Responsive layouts for common phone, tablet and desktop sizes.
+- No unintended horizontal overflow.
+- Keyboard accessibility.
+- Visible focus.
+- Screen-reader status announcements.
+- Sufficient contrast.
+- Respect `prefers-reduced-motion`.
+
+## 5. Explicit Boundaries
+
+- Do NOT modify backend routes, services or API contracts.
+- Do NOT modify Drizzle schema or migrations.
+- Do NOT run migrations or seeds.
+- Do NOT create synthetic student accounts or learning records.
+- Do NOT fabricate published learning content.
+- Do NOT create a Parent Portal.
+- Do NOT create new user roles.
+- Do NOT expose other students' data.
+- Do NOT expose Admin or Teacher private functions to Students.
+- Do NOT use unpinned content versions in an existing assignment.
+- Do NOT create an automatic emotional inference system.
+- Do NOT use camera, microphone, image recognition or voice inference.
+- Do NOT record children's voices.
+- Do NOT build AI-generated psychological recommendations.
+- Do NOT implement GAS scoring.
+- Do NOT implement standardized SEL scoring.
+- Do NOT force a child to disclose emotions, body sensations or personal experiences.
+- Do NOT make completion a condition for displaying all available choices.
+- Do NOT use timers, streaks, rankings, punitive feedback or shame.
+- Do NOT persist child answers locally as a workaround for failed backend persistence.
+- Do NOT introduce unrelated packages or rebuild the P3-01 architecture.
+- Do NOT begin additional Admin or Teacher workflows.
+- Do NOT commit or push Git changes.
+- Do NOT cold-restart or delete the workspace.
+
+If an essential backend capability is missing, report the exact gap. Do not create a fake API or silently alter a request payload.
+
+Any backend/schema modification requires separate Technical Lead approval before execution.
+
+## 6. Acceptance Criteria
+
+P3-03 is PASS only when:
+
+### Student access
+- Student authentication and role routing work with the existing session context.
+- Student sees only their own assignments.
+- Assignment detail uses real backend data.
+- No fabricated progress or content is shown.
+
+### Content
+- The exact pinned content versions are displayed.
+- Published content is rendered through verified payload contracts.
+- Chapter scenes preserve correct order.
+- Missing scenes or cards are handled honestly.
+- No draft or unapproved content is exposed.
+
+### Six-step learning workspace
+- Three sessions and six steps are represented correctly.
+- Each step uses the correct content references and interaction component.
+- Body Map is optional.
+- Intensity Scale is optional.
+- Strategy choices remain open.
+- Facts and guesses are clearly distinguished.
+- Communication Board supports alternative communication.
+- The child can skip, stop, ask for help or decline to answer.
+
+### Persistence
+- Attempt start works through the backend.
+- Existing attempts resume correctly.
+- Previous turns are restored.
+- New turns use the exact API contract.
+- Duplicate submission handling works.
+- Explicit retry works.
+- Explicit completion works.
+- Explicit abandonment works where supported.
+- Logout, refresh and session expiry do not silently abandon attempts.
+- Unsaved responses are never falsely presented as saved.
+
+### Accessibility
+- Student preferences are honored.
+- Read-aloud is user initiated.
+- AAC is usable.
+- Keyboard navigation works.
+- Focus is visible.
+- Reduced motion is respected.
+- Touch targets are appropriate.
+- No inaccessible color-only interactions exist.
+
+### Product safety
+- No diagnostic or psychological profiling language.
+- No forced emotional disclosure.
+- No score, rank or comparison.
+- No punitive response to skipped or unanswered steps.
+- No Admin/Teacher data leakage.
+- No parent account or Parent Portal.
+
+### Regression
+- TypeScript passes.
+- Production build passes.
+- Existing frontend tests pass.
+- P2 and P3-01/P3-02 regression tests pass.
+- `/api/v1/health` remains healthy.
+- `/api/v1/db/health` remains healthy.
+- Existing Admin and Teacher workflows remain intact.
+
+Use `PASS`, `FAIL` and `NOT RUN` honestly.
+
+A missing real Student login account means live authentication testing is `NOT RUN`; do not create a seed account to force a pass.
+
+## 7. Evidence & Report
+
+Return:
+
+1. Overall verdict: `PASS`, `PARTIAL` or `FAIL`.
+2. Files created and modified.
+3. Student routes and pages implemented.
+4. Actual backend endpoints and DTOs used.
+5. Assignment listing and detail evidence.
+6. Published content and pinned-version verification.
+7. Chapter/session/step mapping evidence.
+8. Five-scene story verification.
+9. Emotion, Body Map, Intensity, Strategy, Fact-vs-Guess and AAC component evidence.
+10. Attempt start/resume/retry/turn/complete/abandon verification.
+11. Persistence and idempotency evidence.
+12. Accessibility and responsive testing.
+13. Screenshots or Preview evidence where available.
+14. TypeScript, production build and regression results.
+15. Health endpoint results.
+16. Missing learning content or backend capabilities.
+17. Chapter diary compatibility findings.
+18. Remaining work for P3-04.
+
+Clearly distinguish:
+- Unit test.
+- Mock API test.
+- Live API test.
+- Live Student browser test.
+- NOT RUN.
+
+Do not claim a real Student learning journey passed unless it was actually performed.
+
+## 8. Stop Condition
+
+Implement P3-03 only.
+
+Do not begin P3-04.
+
+Do not modify backend contracts, database schema or migrations.
+
+Do not create or publish learning content automatically.
+
+Stop after implementation, testing and evidence reporting.
+
+Wait for Technical Lead review before beginning P3-04.

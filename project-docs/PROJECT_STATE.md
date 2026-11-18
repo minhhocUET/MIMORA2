@@ -1,8 +1,8 @@
 # MIMORA — Project State
 
-**Last updated:** 2026-11-17  
-**Current phase:** Phase 2 (Backend Core)  
-**Current task:** P2-06 — Student Learning Attempts, Turn Persistence, Support Telemetry & Assignment Progress (+ Controlled Live TiDB Verification)
+**Last updated:** 2026-11-18  
+**Current phase:** Phase 2 (Backend Core — Completed)  
+**Current task:** P2-07 — Private Teacher Observations, Student Profiles & Privacy-Preserving Admin Insights (+ Controlled Live TiDB & 22-Table Parity Verification)
 
 ---
 
@@ -58,9 +58,9 @@
 1. **`[DEFERRED — PO Decision]` Chính sách mật khẩu / PIN học sinh & Lockout:** Chưa chốt độ dài tối thiểu, số lần sai `failed_login_attempts` và thời gian `locked_until` / ngưỡng khóa cứng cho Student login.
 2. **`[DEFERRED — PO Decision]` Chính sách chuyển trường của học sinh:** Chưa chốt việc chuyển trường sẽ gắn `membership` mới vào cùng `user_id` cũ hay tạo `user_id` độc lập hoàn toàn để tách lịch sử giữa hai trường.
 3. **`[DEFERRED — PO/Legal Decision]` Chính sách Data Retention & Deletion:** Chưa chốt thời hạn lưu giữ `sessions` hết hạn, `audit_logs`, `csv_import_jobs`, `teacher_observations` (`deleted_at`) và quy trình xóa/ẩn danh hóa dữ liệu học sinh.
-4. **`[DEFERRED]` Cơ chế tính Rollup cho `org_insight_daily_snapshots`:** Chưa chốt giữa cập nhật gia tăng trong transaction, job định kỳ bên ngoài container, hay truy vấn aggregate trực tiếp kèm cache ngắn hạn.
-5. **`[ASSUMPTION]` Ngưỡng Cohort Suppression (`k = 5`):** Đề xuất ngưỡng k-anonymity tối thiểu `k = 5` học sinh phân biệt + ẩn đồng nhất `< 5` + gộp `daily -> weekly -> monthly` / `all` types cho `org_insight_daily_snapshots`; chờ PO/Legal xác nhận ngưỡng cuối cùng.
-6. **`[PARTIALLY VERIFIED]` Kiểm thử hành vi DML & Parity sau Migration:** Đã hoàn tất kiểm thử DML có kiểm soát bằng tài khoản runtime trên TiDB `test` cho nhóm bảng `organizations`, `users`, `organization_memberships`, `classes`, `class_teachers`, `class_enrollments`, `csv_import_jobs`, `sessions`, `audit_logs` (`P2-03`), `content_items`, `content_versions`, `content_approvals` (`P2-04`), `assignments`, `assignment_items`, `assignment_targets` (`P2-05`), và `activity_attempts`, `activity_attempt_turns`, `assignment_progress` (`P2-06` — bao gồm `T-CONC-01..03`, `uq_attempts_single_in_progress`, `uq_turns_attempt_idx`, đồng bộ tiến độ không đếm trùng qua retry, bỏ dở có chủ đích, hết hạn/thu hồi phiên và khôi phục lượt, ranh giới bài đóng read-only và phân quyền co-teacher/unassigned/admin với 0 dòng tồn dư trên toàn bộ 17 bảng). Vẫn **chưa kiểm thử thực tế**: DML cho `teacher_observations`, `org_insight_daily_snapshots` và đối chiếu đầy đủ `SHOW CREATE TABLE` parity cho toàn bộ 22 bảng. *(Lưu ý: `tidb_enable_check_constraint` vẫn là `OFF`; toàn bộ enum/domain constraints phải được kiểm tra ở service layer.)*
+4. **`[DEFERRED]` Cơ chế kích hoạt Rollup định kỳ cho `org_insight_daily_snapshots`:** Đã triển khai hàm tính toán rollup tường minh `computeAndUpsertOrgInsightSnapshots` trong `insight.service.ts` (không tự động ghi lúc khởi động hoặc chạy cron trong container). Vẫn **chưa chốt** cơ chế lập lịch kích hoạt bên ngoài container (external scheduler vs incremental trigger).
+5. **`[ASSUMPTION]` Ngưỡng Cohort Suppression (`k = 5`):** Đã thực thi tại service layer (`insight.service.ts`) ngưỡng k-anonymity tối thiểu `k = 5` học sinh phân biệt + kiểm tra phần bù `eligible - active` + complementary suppression qua các loại nội dung và giữa các tổ chức cho `org_insight_daily_snapshots`; chờ PO/Legal xác nhận ngưỡng cuối cùng.
+6. **`[DML & PARITY VERIFIED — OPERATOR SECRETS OPEN]` Kiểm thử hành vi DML & Parity sau Migration:** Đã hoàn tất kiểm thử DML có kiểm soát bằng tài khoản runtime trên TiDB `test` qua toàn bộ `P2-02`..`P2-07`: `organizations`, `users`, `organization_memberships`, `classes`, `class_teachers`, `class_enrollments`, `csv_import_jobs`, `sessions`, `audit_logs` (`P2-03`), `content_items`, `content_versions`, `content_approvals` (`P2-04`), `assignments`, `assignment_items`, `assignment_targets` (`P2-05`), `activity_attempts`, `activity_attempt_turns`, `assignment_progress` (`P2-06`), và `teacher_observations`, `student_profiles`, `student_goals`, `org_insight_daily_snapshots` (`P2-07` — `runTag = p207test-42cc2722`, xác minh `fk_obs_attempt_assignment` MySQL errno `1452`, author-only 404/403, soft-delete, profile/goal safety, `k = 5` suppression, 0 dòng tồn dư & khớp 100% pre-flight). Đồng thời đã hoàn tất đối chiếu read-only `SHOW CREATE TABLE` parity cho **toàn bộ 22/22 bảng ứng dụng** khớp `drizzle/0000_mimora_mvp_init.sql` (cột, PK, unique keys, FKs, explicit indexes, 5 virtual generated columns). Vẫn mở: dọn thủ công `TIDB_MIGRATOR_*` khỏi AI Studio Secrets và `tidb_enable_check_constraint = OFF` (buộc giữ kiểm tra enum/domain tại service layer).
 7. **`[DEFERRED]` Production Deployment Entry & Production HTTPS/Proxy Verification:** Chưa triển khai nhánh phục vụ static `dist/` khi `NODE_ENV=production`, script `"start"`, và chưa xác minh hành vi HTTPS/reverse proxy ở môi trường production thực tế.
 8. **`[DEFERRED]` Chính sách Pepper:** Chưa quyết định có bổ sung server-side `pepper` vào quy trình hash mật khẩu hay giữ nguyên `scrypt$v1$` thuần túy.
 
@@ -68,7 +68,7 @@
 
 ## 7. Kiến trúc kỹ thuật hiện tại (Implemented vs Generated vs Service-Enforced vs Unverified)
 
-- **Implemented (Phase 1 Foundation + Phase 2 Core through P2-05):**
+- **Implemented (Phase 1 Foundation + Phase 2 Core Complete: P2-01 through P2-07):**
   - `server.ts`, `src/server/config/env.ts`, `src/server/db/tidb.ts`, `src/server/db/uuid.ts`, `src/server/http/{errors,middleware,validation}.ts`: Runtime Express + Vite, `getDb()` / `withTransaction()` schema-typed trên TiDB, Vietnamese-first API error contract, Zod v4 request validation.
   - `src/server/security/{password-hash,scrypt-limiter,session,csrf,rate-limit}.ts` & `src/server/middleware/auth.ts`: Custom Auth (`scrypt$v1$` + `ScryptConcurrencyLimiter` max 4), SHA-256 hashed server-side `sessions` (`HttpOnly` cookie, rotation, revocation), Origin/Referer + custom header + session-bound HMAC CSRF, rate limiting, và `requireAuth` / `requireOrgContext` / `requireRole`.
   - `src/server/services/audit.service.ts`: Append-only audit writer với allowlist `AUDIT_EVENT_TYPES` và kiểm tra đệ quy chặn rò rỉ dữ liệu nhạy cảm.
@@ -77,15 +77,14 @@
   - `src/server/validators/content-payload.schema.ts`, `src/server/repositories/content.repository.ts`, `src/server/services/content.service.ts`, `src/server/routes/{admin-content,library}.routes.ts`: Shared SEL Content Library với Zod payload + safety validation (`scanUnsafeSelText`) cho 5 canonical types (`emotion_card`, `situation_card`, `action_card`, `social_story_card`, `communication_card`), versioning bất biến, multi-round `submit`/`approve`/`reject`/`resubmit`/`publish`/`archive`, `.for('update')` concurrency control, creator/reviewer separation (`>=2` Admin chặn self-approve `403`; `===1` Admin cho phép kèm `content.self_approved`), và Teacher published-only library (`GET /api/v1/library/content*`).
   - `src/server/repositories/assignment.repository.ts`, `src/server/services/assignment.service.ts`, `src/server/routes/assignments.routes.ts`: Class Assignments, Published Content Version Pinning (`assignment_items.content_version_id -> content_versions.id`), Creator-only mutations vs Co-teacher read-only (`403` cho non-creator), Target Student validation & activity-removal lock (`409 TARGET_HAS_ACTIVITY`), Teacher-authored Home Practice & printable guide DTO, Informational Due Dates (không chặn overdue), Read-only progress summary (`GET /api/v1/assignments/:assignmentId/progress`), và Student self-only assignment APIs (`GET /api/v1/student/assignments*`).
   - `src/server/repositories/attempt.repository.ts`, `src/server/services/attempt.service.ts`, `src/server/routes/attempts.routes.ts`: Student Learning Attempts lifecycle (`start-or-resume`, `get`, `turns`, `complete`, `abandon`), khóa `FOR UPDATE` toàn bộ truy vấn trong transaction (`REPEATABLE READ` current read trên TiDB), bảo vệ trùng `in_progress` (`uq_attempts_single_in_progress`), idempotency key & retry chủ động (`intent='retry'`), thứ tự turn & replay/conflict (`uq_turns_attempt_idx`), đồng bộ nguyên tử `assignment_progress` (không đếm trùng khi retry), tùy chọn telemetry AAC/Read-Aloud trung tính (ngữ cảnh hỗ trợ thuần túy, không suy diễn năng lực hay đánh giá đúng/sai), bảo toàn lượt `in_progress` khi hết hạn phiên (tuyệt đối không auto-abandon), giữ bản đọc-only khi bài tập đóng, không sao chép lựa chọn/cảm xúc học sinh vào `audit_logs`, và Teacher assigned-class read-only review (`GET /api/v1/assignments/:assignmentId/attempts*`).
-- **Migrated & Verified Runtime Connectivity & DML Subset (TiDB `test`):**
+  - `src/server/repositories/{observation,goal,insight}.repository.ts`, `src/server/services/{observation,goal,insight}.service.ts`, `src/server/routes/{observations,goals,admin-insights}.routes.ts`: Private Teacher Observations cô lập tuyệt đối theo `author_teacher_membership_id` ở tầng DB (`404` cho co-teacher, `403` cho Admin/Student), suy diễn/khóa `assignmentId` & `classId` trong `withTransaction` khi liên kết `attemptId`, soft-delete (`deleted_at`); Student Profiles & SEL Goals (`support_preferences_json` hỗ trợ tiếp cận/AAC/read-aloud, chặn key lâm sàng/xếp hạng/gamification, `DELETE /api/v1/goals/:goalId` chuyển `status='archived'`, Student chỉ đọc dữ liệu của chính mình qua `/api/v1/student/{profile,goals}`); và Privacy-Preserving Admin Insights (`GET /api/v1/admin/insights`, allowlist bộ lọc chu kỳ cố định chống suy diễn sai phân, ngưỡng `k = 5` + kiểm tra phần bù + complementary suppression trả `null`, hàm rollup tường minh `computeAndUpsertOrgInsightSnapshots`). *(Lưu ý: `AUDIT_EVENT_TYPES` trong `_shared.ts` chưa có event chuyên biệt cho `observation.*`/`goal.*`/`insight.*`, các truy cập bị từ chối phát event bảo mật có sẵn không chứa văn bản nhạy cảm.)*
+- **Migrated & Verified Runtime Connectivity, DML & 22-Table Parity (TiDB `test`):**
   - `drizzle/0000_mimora_mvp_init.sql` (SHA-256 `eec9f4669bf5f7850eb2cf5ca7f975585609334722e44ee4b5339ada2a16c765`) thực thi trên TiDB `test`: `23` base tables, `51` FKs, `5` virtual generated columns.
-  - Đã xác minh live DML + transaction + composite/unique/virtual-column guards qua tài khoản runtime `3rtMqHg6yoxMH5d.mimora_runtime@%` cho `P2-02` Auth, `P2-03` Orgs/Users/Memberships/Classes/CSV (`src/server/integration/live-tidb.integration.ts`), `P2-04` Content Library & Multi-Round Approvals (`src/server/integration/p2-04-live-tidb.integration.ts`), `P2-05` Assignments & Published Pinning (`src/server/integration/p2-05-live-tidb.integration.ts`), và `P2-06` Learning Attempts & Concurrency (`src/server/integration/p2-06-live-tidb.integration.ts`, `runTag = p206test-97368327`).
-- **Service-Enforced (Pending Future Phases `P2-07+`):**
-  - Ép `assignment_id`/`class_id` + author-only isolation cho `teacher_observations`, và cohort suppression (`k = 5`) cho `org_insight_daily_snapshots`.
+  - Đã xác minh live DML + transaction + composite/unique/virtual-column guards qua tài khoản runtime `3rtMqHg6yoxMH5d.mimora_runtime@%` cho `P2-02` Auth, `P2-03` Orgs/Users/Memberships/Classes/CSV (`src/server/integration/live-tidb.integration.ts`), `P2-04` Content Library & Multi-Round Approvals (`src/server/integration/p2-04-live-tidb.integration.ts`), `P2-05` Assignments & Published Pinning (`src/server/integration/p2-05-live-tidb.integration.ts`), `P2-06` Learning Attempts & Concurrency (`src/server/integration/p2-06-live-tidb.integration.ts`, `runTag = p206test-97368327`), và `P2-07` Observations/Profiles/Goals/Insights + 22-Table `SHOW CREATE TABLE` Parity (`src/server/integration/p2-07-live-tidb.integration.ts`, `runTag = p207test-42cc2722`).
 - **Pending Operator Secret Cleanup:**
   - `TIDB_MIGRATOR_USER` và `TIDB_MIGRATOR_PASSWORD` nếu còn trong Google AI Studio Secrets cần operator gỡ thủ công qua AI Studio UI.
 - **Chưa triển khai (Planned):**
-  - P2-07+ Private Teacher Observations & Aggregate Insights, và giao diện Frontend chính thức.
+  - Giao diện Frontend chính thức (Phase 3), production static serving (`KI-04`), và cơ chế kích hoạt job rollup định kỳ ngoài container cho `org_insight_daily_snapshots`.
 
 ---
 
@@ -122,11 +121,13 @@
 - `P2-05`: Class Assignments, Published Content Pinning & Home Practice + Live TiDB Integration Verification (`PASS` — `assignment.{repository,service}.ts`, `assignments.routes.ts`, unit/HTTP tests + live TiDB `p205test-18bc4a29` sạch với 0 tồn dư trên 14 bảng)
 - `P2-06`: Student Learning Attempts, Turn Persistence, Support Telemetry & Assignment Progress + Live TiDB Integration Verification (`PASS` — `attempt.{repository,service}.ts`, `attempts.routes.ts`, fake-repo + HTTP tests + live TiDB `p206test-97368327` xác minh `T-CONC-01..03`, `uq_attempts_single_in_progress`, `uq_turns_attempt_idx`, đồng bộ `assignment_progress`, ranh giới bài đóng & phân quyền, sạch với 0 tồn dư trên 17 bảng)
 
+- `P2-07`: Private Teacher Observations, Student Profiles & SEL Goals, Privacy-Preserving Admin Insights + Live TiDB & 22-Table Parity Verification (`PASS` — `{observation,goal,insight}.{repository,service}.ts`, `{observations,goals,admin-insights}.routes.ts`, unit/HTTP tests `p2-07.test.ts` + live TiDB `p207test-42cc2722` xác minh `fk_obs_attempt_assignment`, author-only 404/403, soft-delete, profile/goal safety, `k = 5` suppression, anti-differencing 422, 0 tồn dư + 22/22 `SHOW CREATE TABLE` parity)
+
 ### Đang thực hiện
-- Chờ Technical Lead nghiệm thu `P2-06`.
+- Hoàn tất Phase 2 Backend Core (`P2-01`..`P2-07`); chờ Technical Lead nghiệm thu `P2-07`.
 
 ### Next Task
-- `P2-07+`: Private Teacher Observations & Organization Aggregate Insights theo chỉ đạo của Technical Lead.
+- Phase 3 Frontend UI / Production Hardening theo chỉ đạo của Technical Lead.
 
 ---
 
@@ -136,8 +137,8 @@ Chi tiết toàn bộ issues được theo dõi tại `project-docs/KNOWN_ISSUES
 - `KI-02`: Nginx nội bộ ghi đè `X-Forwarded-Proto` thành `http` (`req.secure === false`, `req.protocol === 'http'`); hành vi HTTPS/proxy ở môi trường production thực tế chưa được xác minh.
 - `KI-03`: Nginx nội bộ chặn mã HTTP `403`, `502`, `503`, `504` bằng trang HTML tĩnh.
 - `KI-04`..`KI-05`: Chưa triển khai production static serving và authentication/authorization endpoints.
-- `KI-06`: Migration 22 bảng đã thực thi (`P1-03B2B` `PASS`) và runtime `SELECT` đã xác minh (`P1-03B2C` `PASS`), nhưng còn mở kiểm thử DML, composite FKs, virtual unique guards, `SHOW CREATE TABLE` parity và dọn `TIDB_MIGRATOR_*` khỏi AI Studio Secrets.
+- `KI-06`: Đã hoàn tất kiểm thử DML, composite FKs (`T-CONC-01..03`, `T-OBS-01..04`), virtual unique guards và 22/22 `SHOW CREATE TABLE` parity qua `P2-03`..`P2-07` (`p207test-42cc2722`), **vẫn mở** phần operator dọn thủ công `TIDB_MIGRATOR_*` khỏi AI Studio Secrets.
 - `KI-08`: `.git/` cục bộ đã không còn sau lần cold restart container (`2026-11-16`), chưa có remote Git.
-- `KI-09`: `tidb_enable_check_constraint` xác nhận `OFF` trên TiDB Serverless; DDL đã chạy trên cluster nhưng kiểm thử thực thi các virtual generated-column unique guards và parity chi tiết vẫn chờ integration tests.
+- `KI-09`: `tidb_enable_check_constraint` xác nhận `OFF` trên TiDB Serverless (giữ mở vĩnh viễn làm ranh giới kiến trúc buộc validate ở Zod/service layer); toàn bộ runtime unique guards, composite FKs và 22-table `SHOW CREATE TABLE` parity đã được xác minh `PASS` (`p207test-42cc2722`).
 - `KI-10`: Rủi ro TiKV sequential write hotspot với `UUIDv7` Clustered PK (`tidb_enable_clustered_index = ON` đã xác nhận).
 - **Account Custody & Cleanup:** Tài khoản operator `.root` và migrator `3rtMqHg6yoxMH5d.mimora_migrator` không được dùng bởi runtime code; cần operator gỡ `TIDB_MIGRATOR_USER` / `TIDB_MIGRATOR_PASSWORD` khỏi AI Studio Secrets và quản lý tách biệt ngoài runtime.
