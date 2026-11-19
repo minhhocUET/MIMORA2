@@ -443,7 +443,7 @@ export interface FamilyLearningRepository {
     enrollmentId: string,
     familyProgramItemId: string,
     executor?: FamilyLearningDbOrTx
-  ): Promise<{ total: number; completed: number }>;
+  ): Promise<{ total: number; completed: number; maxAttemptNumber?: number }>;
   createFamilyAttempt(
     attempt: typeof familyActivityAttempts.$inferInsert,
     executor?: FamilyLearningDbOrTx
@@ -1332,8 +1332,83 @@ export function createFamilyLearningRepository(): FamilyLearningRepository {
       enrollmentId,
       executor
     ) {
-      const all = await this.listActiveStudentEnrollments(studentUserId, executor);
-      return all.find((e) => e.enrollment.id === enrollmentId) ?? null;
+      if (!executor) {
+        const all = await this.listActiveStudentEnrollments(studentUserId);
+        return all.find((e) => e.enrollment.id === enrollmentId) ?? null;
+      }
+
+      // Inside a transaction: lock the target enrollment row first so concurrent
+      // start/turn/complete/abandon operations serialize per (student, enrollment).
+      const lockQuery = executor
+        .select({
+          enrollment: familyProgramEnrollments,
+          program: familyPrograms,
+          version: familyProgramVersions,
+          workspaceCode: familyWorkspaces.code,
+          workspaceName: familyWorkspaces.name,
+        })
+        .from(familyProgramEnrollments)
+        .innerJoin(
+          familyWorkspaces,
+          eq(familyWorkspaces.id, familyProgramEnrollments.familyWorkspaceId)
+        )
+        .innerJoin(
+          familyStudents,
+          and(
+            eq(
+              familyStudents.familyWorkspaceId,
+              familyProgramEnrollments.familyWorkspaceId
+            ),
+            eq(
+              familyStudents.studentUserId,
+              familyProgramEnrollments.studentUserId
+            ),
+            eq(familyStudents.status, 'active')
+          )
+        )
+        .innerJoin(
+          familyPrograms,
+          eq(familyPrograms.id, familyProgramEnrollments.familyProgramId)
+        )
+        .innerJoin(
+          familyProgramVersions,
+          eq(
+            familyProgramVersions.id,
+            familyProgramEnrollments.familyProgramVersionId
+          )
+        )
+        .where(
+          and(
+            eq(familyProgramEnrollments.id, enrollmentId),
+            eq(familyProgramEnrollments.studentUserId, studentUserId),
+            eq(familyProgramEnrollments.status, 'active'),
+            eq(familyWorkspaces.status, 'active')
+          )
+        )
+        .limit(1)
+        .for('update');
+
+      const [matched] = await lockQuery;
+      if (!matched) {
+        return null;
+      }
+
+      const [activeLink] = await executor
+        .select({ id: guardianStudentLinks.id })
+        .from(guardianStudentLinks)
+        .where(
+          and(
+            eq(guardianStudentLinks.studentUserId, studentUserId),
+            eq(
+              guardianStudentLinks.familyWorkspaceId,
+              matched.enrollment.familyWorkspaceId
+            ),
+            eq(guardianStudentLinks.relationshipStatus, 'active')
+          )
+        )
+        .limit(1);
+
+      return activeLink ? matched : null;
     },
 
     async listFamilyAttemptsForEnrollment(
@@ -1356,7 +1431,7 @@ export function createFamilyLearningRepository(): FamilyLearningRepository {
 
     async findFamilyAttemptByIdForStudent(studentUserId, attemptId, executor) {
       const db = resolveDb(executor);
-      const rows = await db
+      const baseQuery = db
         .select()
         .from(familyActivityAttempts)
         .where(
@@ -1366,6 +1441,7 @@ export function createFamilyLearningRepository(): FamilyLearningRepository {
           )
         )
         .limit(1);
+      const rows = executor ? await baseQuery.for('update') : await baseQuery;
       return rows[0] ?? null;
     },
 
@@ -1375,7 +1451,7 @@ export function createFamilyLearningRepository(): FamilyLearningRepository {
       executor
     ) {
       const db = resolveDb(executor);
-      const rows = await db
+      const baseQuery = db
         .select()
         .from(familyActivityAttempts)
         .where(
@@ -1389,6 +1465,7 @@ export function createFamilyLearningRepository(): FamilyLearningRepository {
           )
         )
         .limit(1);
+      const rows = executor ? await baseQuery.for('update') : await baseQuery;
       return rows[0] ?? null;
     },
 
@@ -1399,7 +1476,7 @@ export function createFamilyLearningRepository(): FamilyLearningRepository {
       executor
     ) {
       const db = resolveDb(executor);
-      const rows = await db
+      const baseQuery = db
         .select()
         .from(familyActivityAttempts)
         .where(
@@ -1413,6 +1490,7 @@ export function createFamilyLearningRepository(): FamilyLearningRepository {
           )
         )
         .limit(1);
+      const rows = executor ? await baseQuery.for('update') : await baseQuery;
       return rows[0] ?? null;
     },
 
@@ -1422,9 +1500,10 @@ export function createFamilyLearningRepository(): FamilyLearningRepository {
       executor
     ) {
       const db = resolveDb(executor);
-      const rows = await db
+      const baseQuery = db
         .select({
           status: familyActivityAttempts.status,
+          attemptNumber: familyActivityAttempts.attemptNumber,
         })
         .from(familyActivityAttempts)
         .where(
@@ -1433,9 +1512,21 @@ export function createFamilyLearningRepository(): FamilyLearningRepository {
             eq(familyActivityAttempts.familyProgramItemId, familyProgramItemId)
           )
         );
+      const rows = executor ? await baseQuery.for('update') : await baseQuery;
+      let maxAttemptNumber = 0;
+      let completed = 0;
+      for (const r of rows) {
+        if (r.attemptNumber > maxAttemptNumber) {
+          maxAttemptNumber = r.attemptNumber;
+        }
+        if (r.status === 'completed') {
+          completed += 1;
+        }
+      }
       return {
         total: rows.length,
-        completed: rows.filter((r) => r.status === 'completed').length,
+        completed,
+        maxAttemptNumber,
       };
     },
 
@@ -1452,7 +1543,7 @@ export function createFamilyLearningRepository(): FamilyLearningRepository {
 
     async listTurnsForFamilyAttempt(studentUserId, attemptId, executor) {
       const db = resolveDb(executor);
-      return db
+      const baseQuery = db
         .select()
         .from(familyActivityAttemptTurns)
         .where(
@@ -1461,7 +1552,12 @@ export function createFamilyLearningRepository(): FamilyLearningRepository {
             eq(familyActivityAttemptTurns.attemptId, attemptId)
           )
         )
-        .orderBy(asc(familyActivityAttemptTurns.turnIndex));
+        .orderBy(
+          asc(familyActivityAttemptTurns.turnIndex),
+          asc(familyActivityAttemptTurns.respondedAt),
+          asc(familyActivityAttemptTurns.id)
+        );
+      return executor ? baseQuery.for('update') : baseQuery;
     },
 
     async findTurnForFamilyAttempt(
@@ -1471,7 +1567,7 @@ export function createFamilyLearningRepository(): FamilyLearningRepository {
       executor
     ) {
       const db = resolveDb(executor);
-      const rows = await db
+      const baseQuery = db
         .select()
         .from(familyActivityAttemptTurns)
         .where(
@@ -1482,6 +1578,7 @@ export function createFamilyLearningRepository(): FamilyLearningRepository {
           )
         )
         .limit(1);
+      const rows = executor ? await baseQuery.for('update') : await baseQuery;
       return rows[0] ?? null;
     },
 
@@ -1549,7 +1646,16 @@ export function createFamilyLearningRepository(): FamilyLearningRepository {
 
     async recomputeAndUpdateEnrollmentProgress(params, executor) {
       const db = resolveDb(executor);
-      const attempts = await db
+      const enrollmentQuery = db
+        .select()
+        .from(familyProgramEnrollments)
+        .where(eq(familyProgramEnrollments.id, params.enrollmentId))
+        .limit(1);
+      const [existingEnrollment] = executor
+        ? await enrollmentQuery.for('update')
+        : await enrollmentQuery;
+
+      const attemptsQuery = db
         .select({
           familyProgramItemId: familyActivityAttempts.familyProgramItemId,
           status: familyActivityAttempts.status,
@@ -1564,6 +1670,9 @@ export function createFamilyLearningRepository(): FamilyLearningRepository {
             eq(familyActivityAttempts.studentUserId, params.studentUserId)
           )
         );
+      const attempts = executor
+        ? await attemptsQuery.for('update')
+        : await attemptsQuery;
 
       const completedItemIds = new Set(
         attempts
@@ -1599,9 +1708,10 @@ export function createFamilyLearningRepository(): FamilyLearningRepository {
         .filter((t): t is number => t !== null);
       const completedAt =
         learningStatus === 'completed'
-          ? completedDates.length > 0
-            ? new Date(Math.max(...completedDates))
-            : params.now
+          ? (existingEnrollment?.completedAt ??
+            (completedDates.length > 0
+              ? new Date(Math.max(...completedDates))
+              : params.now))
           : null;
 
       await db

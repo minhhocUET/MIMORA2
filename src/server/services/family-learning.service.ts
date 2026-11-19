@@ -29,42 +29,32 @@ import {
   type AuditInsertExecutor,
   type RecordAuditEventInput,
 } from './audit.service.ts';
+import {
+  areAttemptTurnPayloadsEquivalent,
+  assertAttemptCanAbandon,
+  assertAttemptCanComplete,
+  assertAttemptCanSaveTurn,
+  assertPinnedContentVersionMatches,
+  buildAttemptSupportContextView,
+  computeAttemptAvailableActions,
+  computeAttemptResumePosition,
+  computeMonotonicAttemptDuration,
+  isDuplicateKeyDbError,
+  normalizeAttemptEngineStatus,
+  resolveInitialSupportCounts,
+  resolveStartOrResumeEligibility,
+  resolveSupportTelemetryUpdate,
+  runWithTransientLockRetry,
+  toSafeAttemptTurnView,
+  validateOptionalAttemptShortText,
+  validateRequiredAttemptStepKey,
+  validateSafeAttemptJsonObject,
+} from './attempt-shared.ts';
 import { validateSupportPreferencesJson } from './goal.service.ts';
 
 const UUID_REGEX =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const SLUG_REGEX = /^[a-z0-9][a-z0-9_-]{1,127}$/;
-
-const FORBIDDEN_TURN_PAYLOAD_KEYS = new Set([
-  'password',
-  'passwordhash',
-  'secret',
-  'token',
-  'rawtoken',
-  'email',
-  'phone',
-  'phonenumber',
-  'timer',
-  'timerseconds',
-  'countdown',
-  'leaderboard',
-  'ranking',
-  'rank',
-  'score',
-  'scores',
-  'points',
-  'streak',
-  'penalty',
-  'punishment',
-  'shame',
-  'iscorrect',
-  'correctanswer',
-  'diagnosis',
-  'clinicaldiagnosis',
-  'disorder',
-  'psychologicalprofile',
-  'mastery',
-]);
 
 export const programItemInputSchema = z
   .object({
@@ -406,133 +396,8 @@ function assertSafeText(text: string | null | undefined, field: string): void {
   }
 }
 
-function validateTurnTextAndPayload(
-  rawText: string | null | undefined,
-  field: string
-): string | null {
-  if (rawText === undefined || rawText === null) return null;
-  const trimmed = rawText.trim();
-  if (trimmed.length === 0) return null;
-  const issues = scanUnsafeSelText(trimmed, field);
-  if (issues.length > 0) {
-    throw ApiErrors.validation(issues);
-  }
-  return trimmed;
-}
-
-function scanJsonObjectSafety(
-  value: unknown,
-  path: string,
-  details: ApiErrorDetail[]
-): void {
-  if (typeof value === 'string') {
-    details.push(...scanUnsafeSelText(value, path));
-    return;
-  }
-  if (Array.isArray(value)) {
-    for (let i = 0; i < value.length; i += 1) {
-      scanJsonObjectSafety(value[i], `${path}[${i}]`, details);
-    }
-    return;
-  }
-  if (value && typeof value === 'object') {
-    for (const [k, child] of Object.entries(value as Record<string, unknown>)) {
-      const normalized = k.toLowerCase().replace(/[^a-z0-9]/g, '');
-      if (FORBIDDEN_TURN_PAYLOAD_KEYS.has(normalized)) {
-        details.push({
-          field: `${path}.${k}`,
-          code: 'FORBIDDEN_ATTEMPT_PAYLOAD_KEY',
-          messageKey: 'error.attempt.forbidden_payload_key',
-          message: `Trường "${k}" không được phép trong dữ liệu phản hồi SEL.`,
-        });
-        continue;
-      }
-      scanJsonObjectSafety(child, `${path}.${k}`, details);
-    }
-  }
-}
-
-function validateSafeTurnJsonObject(
-  raw: Record<string, unknown> | null | undefined,
-  field: string
-): Record<string, unknown> | null {
-  if (raw === undefined || raw === null) return null;
-  if (typeof raw !== 'object' || Array.isArray(raw)) {
-    throw ApiErrors.validation([
-      {
-        field,
-        code: 'INVALID_JSON_OBJECT',
-        messageKey: 'error.validation.invalid_json',
-        message: 'Dữ liệu phản hồi phải là JSON object.',
-      },
-    ]);
-  }
-  const details: ApiErrorDetail[] = [];
-  scanJsonObjectSafety(raw, field, details);
-  if (details.length > 0) {
-    throw ApiErrors.validation(details);
-  }
-  return raw;
-}
-
-function stableNormalizeJson(value: unknown): unknown {
-  if (Array.isArray(value)) {
-    return value.map(stableNormalizeJson);
-  }
-  if (value && typeof value === 'object') {
-    const out: Record<string, unknown> = {};
-    for (const key of Object.keys(value as Record<string, unknown>).sort()) {
-      const child = (value as Record<string, unknown>)[key];
-      if (child !== undefined) {
-        out[key] = stableNormalizeJson(child);
-      }
-    }
-    return out;
-  }
-  return value;
-}
-
-function areTurnsIdentical(
-  existing: FamilyActivityAttemptTurnRecord,
-  incoming: {
-    stepKey: string;
-    selectedChoiceKey: string | null;
-    selectedEmotionKey: string | null;
-    usedAac: boolean;
-    usedReadAloud: boolean;
-    responsePayloadJson: Record<string, unknown> | null;
-  }
-): boolean {
-  return (
-    existing.stepKey === incoming.stepKey &&
-    (existing.selectedChoiceKey ?? null) === incoming.selectedChoiceKey &&
-    (existing.selectedEmotionKey ?? null) === incoming.selectedEmotionKey &&
-    Boolean(existing.usedAac) === incoming.usedAac &&
-    Boolean(existing.usedReadAloud) === incoming.usedReadAloud &&
-    JSON.stringify(stableNormalizeJson(existing.responsePayloadJson ?? null)) ===
-      JSON.stringify(stableNormalizeJson(incoming.responsePayloadJson ?? null))
-  );
-}
-
-function toSafeAdminItemView(
-  item: FamilyProgramItemJoinedRecord
-): SafeAdminProgramItemView {
-  return {
-    id: item.id,
-    chapterNumber: item.chapterNumber,
-    chapterTitle: item.chapterTitle,
-    sortOrder: item.sortOrder,
-    contentVersionId: item.contentVersionId,
-    contentItemId: item.contentItemId,
-    contentSlug: item.contentSlug,
-    contentType: item.contentType,
-    contentVersionNumber: item.contentVersionNumber,
-    contentStatus: item.contentStatus,
-    contentTitle: item.contentTitle,
-    contentSummary: item.contentSummary,
-    contentLocale: item.contentLocale,
-    payloadJson: item.payloadJson,
-  };
+function toSafeTurnView(turn: FamilyActivityAttemptTurnRecord): SafeFamilyTurnView {
+  return toSafeAttemptTurnView(turn);
 }
 
 function toSafeAdminVersionView(
@@ -553,21 +418,28 @@ function toSafeAdminVersionView(
     retiredAt: version.retiredAt ? version.retiredAt.toISOString() : null,
     createdAt: version.createdAt.toISOString(),
     updatedAt: version.updatedAt.toISOString(),
-    ...(items ? { items: items.map(toSafeAdminItemView) } : {}),
-  };
-}
-
-function toSafeTurnView(turn: FamilyActivityAttemptTurnRecord): SafeFamilyTurnView {
-  return {
-    id: turn.id,
-    turnIndex: turn.turnIndex,
-    stepKey: turn.stepKey,
-    selectedChoiceKey: turn.selectedChoiceKey ?? null,
-    selectedEmotionKey: turn.selectedEmotionKey ?? null,
-    usedAac: Boolean(turn.usedAac),
-    usedReadAloud: Boolean(turn.usedReadAloud),
-    responsePayloadJson: turn.responsePayloadJson ?? null,
-    respondedAt: turn.respondedAt.toISOString(),
+    ...(items
+      ? {
+          items: items.map(
+            (i): SafeAdminProgramItemView => ({
+              id: i.id,
+              chapterNumber: i.chapterNumber,
+              chapterTitle: i.chapterTitle,
+              sortOrder: i.sortOrder,
+              contentVersionId: i.contentVersionId,
+              contentItemId: i.contentItemId,
+              contentSlug: i.contentSlug,
+              contentType: i.contentType,
+              contentVersionNumber: i.contentVersionNumber,
+              contentStatus: i.contentStatus,
+              contentTitle: i.contentTitle,
+              contentSummary: i.contentSummary,
+              contentLocale: i.contentLocale,
+              payloadJson: i.payloadJson,
+            })
+          ),
+        }
+      : {}),
   };
 }
 
@@ -578,13 +450,9 @@ function buildFamilyAttemptView(params: {
   enrollment: FamilyProgramEnrollmentRecord;
 }): SafeFamilyStudentAttemptView {
   const { attempt, item, turns, enrollment } = params;
-  const state = (
-    attempt.status === 'completed' || attempt.status === 'abandoned'
-      ? attempt.status
-      : 'in_progress'
-  ) as 'in_progress' | 'completed' | 'abandoned';
+  const state = normalizeAttemptEngineStatus(attempt.status);
   const isInProgress = state === 'in_progress';
-  const lastTurn = turns.length > 0 ? turns[turns.length - 1] : null;
+  const safeTurns = turns.map(toSafeTurnView);
   const learningStatus = (
     enrollment.learningStatus === 'completed' ||
     enrollment.learningStatus === 'in_progress'
@@ -618,27 +486,13 @@ function buildFamilyAttemptView(params: {
     lastInteractedAt: attempt.lastInteractedAt.toISOString(),
     completedAt: attempt.completedAt ? attempt.completedAt.toISOString() : null,
     elapsedSeconds: attempt.durationSeconds,
-    supportContext: {
-      usedAacSupport: Boolean(attempt.usedAacSupport),
-      usedReadAloud: Boolean(attempt.usedReadAloud),
-      aacTapCount: attempt.aacTapCount,
-      readAloudCount: attempt.readAloudCount,
-      isOptionalContextOnly: true,
-    },
-    turns: turns.map(toSafeTurnView),
-    resumePosition: {
-      savedTurnCount: turns.length,
-      nextTurnIndex: lastTurn ? lastTurn.turnIndex + 1 : 0,
-      lastTurnIndex: lastTurn ? lastTurn.turnIndex : null,
-      lastStepKey: lastTurn ? lastTurn.stepKey : null,
-    },
-    availableActions: {
-      canResume: isInProgress,
-      canSubmitTurn: isInProgress,
-      canComplete: isInProgress,
-      canAbandon: isInProgress,
-      canRetry: !isInProgress,
-    },
+    supportContext: buildAttemptSupportContextView(attempt),
+    turns: safeTurns,
+    resumePosition: computeAttemptResumePosition(safeTurns),
+    availableActions: computeAttemptAvailableActions({
+      isReadOnly: false,
+      state,
+    }),
     enrollmentProgress: {
       learningStatus,
       totalActivities: enrollment.totalActivities,
@@ -1929,173 +1783,231 @@ export function createFamilyLearningService(deps?: FamilyLearningServiceDeps) {
       },
       actor: FamilyStudentActorContext
     ) {
-      const joined = await repo.findActiveStudentEnrollmentById(
-        actor.actorUserId,
-        input.enrollmentId
-      );
-      if (!joined) {
-        throw ApiErrors.notFound(
-          'Không tìm thấy chương trình gia đình trong tài khoản của bạn.'
-        );
-      }
-
-      const items = await repo.listProgramVersionItemsJoined(joined.version.id);
-      const item = items.find((i) => i.id === input.itemId);
-      if (!item) {
-        throw ApiErrors.notFound(
-          'Không tìm thấy hoạt động này trong phiên bản chương trình gia đình.'
-        );
-      }
-
-      if (
-        input.expectedContentVersionId &&
-        input.expectedContentVersionId !== item.contentVersionId
-      ) {
-        throw ApiErrors.conflict(
-          'CONTENT_VERSION_MISMATCH',
-          'error.attempt.content_version_mismatch',
-          'Phiên bản nội dung hoạt động không khớp với phiên bản đã ghim.'
-        );
-      }
-
       const intent = input.intent ?? 'start_or_resume';
       const now = nowFn();
 
-      if (input.idempotencyKey) {
-        const existingByKey = await repo.findFamilyAttemptByIdempotencyKey(
-          joined.enrollment.id,
-          item.id,
-          input.idempotencyKey
-        );
-        if (existingByKey) {
-          const turns = await repo.listTurnsForFamilyAttempt(
-            actor.actorUserId,
-            existingByKey.id
-          );
-          return {
-            httpStatus: 200 as const,
-            action: 'idempotent_replay' as const,
-            attempt: buildFamilyAttemptView({
-              attempt: existingByKey,
-              item,
-              turns,
-              enrollment: joined.enrollment,
+      try {
+        return await runWithTransientLockRetry(
+          async () =>
+            repo.withTransaction(async (tx) => {
+              const joined = await repo.findActiveStudentEnrollmentById(
+                actor.actorUserId,
+                input.enrollmentId,
+                tx
+              );
+              if (!joined) {
+                throw ApiErrors.notFound(
+                  'Không tìm thấy chương trình gia đình trong tài khoản của bạn.'
+                );
+              }
+
+              const items = await repo.listProgramVersionItemsJoined(
+                joined.version.id,
+                tx
+              );
+              const item = items.find((i) => i.id === input.itemId);
+              if (!item) {
+                throw ApiErrors.notFound(
+                  'Không tìm thấy hoạt động này trong phiên bản chương trình gia đình.'
+                );
+              }
+
+              assertPinnedContentVersionMatches(
+                input.expectedContentVersionId,
+                item.contentVersionId
+              );
+
+              if (input.idempotencyKey) {
+                const existingByKey =
+                  await repo.findFamilyAttemptByIdempotencyKey(
+                    joined.enrollment.id,
+                    item.id,
+                    input.idempotencyKey,
+                    tx
+                  );
+                if (existingByKey) {
+                  const [turns, refreshedEnroll] = await Promise.all([
+                    repo.listTurnsForFamilyAttempt(
+                      actor.actorUserId,
+                      existingByKey.id,
+                      tx
+                    ),
+                    repo.recomputeAndUpdateEnrollmentProgress(
+                      {
+                        enrollmentId: joined.enrollment.id,
+                        studentUserId: actor.actorUserId,
+                        totalActivities: items.length,
+                        fallbackActivityAt: existingByKey.lastInteractedAt,
+                        now,
+                      },
+                      tx
+                    ),
+                  ]);
+                  return {
+                    httpStatus: 200 as const,
+                    action: 'idempotent_replay' as const,
+                    attempt: buildFamilyAttemptView({
+                      attempt: existingByKey,
+                      item,
+                      turns,
+                      enrollment: refreshedEnroll,
+                    }),
+                  };
+                }
+              }
+
+              const inProgress = await repo.findInProgressFamilyAttempt(
+                joined.enrollment.id,
+                item.id,
+                tx
+              );
+              if (inProgress) {
+                resolveStartOrResumeEligibility({
+                  hasInProgress: true,
+                  priorAttemptCount: 1,
+                  intent,
+                });
+
+                const [turns, refreshedEnroll] = await Promise.all([
+                  repo.listTurnsForFamilyAttempt(
+                    actor.actorUserId,
+                    inProgress.id,
+                    tx
+                  ),
+                  repo.recomputeAndUpdateEnrollmentProgress(
+                    {
+                      enrollmentId: joined.enrollment.id,
+                      studentUserId: actor.actorUserId,
+                      totalActivities: items.length,
+                      fallbackActivityAt: inProgress.lastInteractedAt,
+                      now,
+                    },
+                    tx
+                  ),
+                ]);
+                return {
+                  httpStatus: 200 as const,
+                  action: 'resumed' as const,
+                  attempt: buildFamilyAttemptView({
+                    attempt: inProgress,
+                    item,
+                    turns,
+                    enrollment: refreshedEnroll,
+                  }),
+                };
+              }
+
+              const counts = await repo.countFamilyAttemptsForItem(
+                joined.enrollment.id,
+                item.id,
+                tx
+              );
+              const startAction = resolveStartOrResumeEligibility({
+                hasInProgress: false,
+                priorAttemptCount: counts.total,
+                intent,
+              });
+
+              const initialSupport = resolveInitialSupportCounts({
+                usedAacSupport: input.usedAacSupport,
+                usedReadAloud: input.usedReadAloud,
+              });
+              const attemptId = generateUuidV7();
+              const attemptNumber =
+                (counts.maxAttemptNumber ?? counts.total) + 1;
+
+              const created = await repo.createFamilyAttempt(
+                {
+                  id: attemptId,
+                  enrollmentId: joined.enrollment.id,
+                  familyWorkspaceId: joined.enrollment.familyWorkspaceId,
+                  studentUserId: actor.actorUserId,
+                  familyProgramVersionId: joined.version.id,
+                  familyProgramItemId: item.id,
+                  contentVersionId: item.contentVersionId,
+                  attemptNumber,
+                  startIdempotencyKey: input.idempotencyKey ?? null,
+                  status: 'in_progress',
+                  startedAt: now,
+                  lastInteractedAt: now,
+                  completedAt: null,
+                  durationSeconds: 0,
+                  usedAacSupport: initialSupport.usedAacSupport,
+                  usedReadAloud: initialSupport.usedReadAloud,
+                  aacTapCount: initialSupport.aacTapCount,
+                  readAloudCount: initialSupport.readAloudCount,
+                  responseSummaryJson: null,
+                },
+                tx
+              );
+
+              const updatedEnroll =
+                await repo.recomputeAndUpdateEnrollmentProgress(
+                  {
+                    enrollmentId: joined.enrollment.id,
+                    studentUserId: actor.actorUserId,
+                    totalActivities: items.length,
+                    fallbackActivityAt: now,
+                    now,
+                  },
+                  tx
+                );
+
+              await safeAudit(
+                {
+                  organizationId: null,
+                  actorUserId: actor.actorUserId,
+                  actorRole: 'student',
+                  eventType: 'family.attempt_started',
+                  targetType: 'family_activity_attempt',
+                  targetId: attemptId,
+                  ipPrefix: actor.ipPrefix,
+                  metadata: {
+                    enrollmentId: joined.enrollment.id,
+                    familyProgramId: joined.program.id,
+                    familyProgramVersionId: joined.version.id,
+                    attemptNumber,
+                  },
+                  createdAt: now,
+                },
+                tx as unknown as AuditInsertExecutor
+              );
+
+              return {
+                httpStatus: 201 as const,
+                action:
+                  startAction === 'retried'
+                    ? ('retried' as const)
+                    : ('started' as const),
+                attempt: buildFamilyAttemptView({
+                  attempt: created,
+                  item,
+                  turns: [],
+                  enrollment: updatedEnroll,
+                }),
+              };
             }),
-          };
-        }
-      }
-
-      const inProgress = await repo.findInProgressFamilyAttempt(
-        joined.enrollment.id,
-        item.id
-      );
-      if (inProgress) {
-        const turns = await repo.listTurnsForFamilyAttempt(
-          actor.actorUserId,
-          inProgress.id
+          {
+            maxAttempts: 5,
+            retryOnDuplicateOnce: true,
+          }
         );
-        return {
-          httpStatus: 200 as const,
-          action: 'resumed' as const,
-          attempt: buildFamilyAttemptView({
-            attempt: inProgress,
-            item,
-            turns,
-            enrollment: joined.enrollment,
-          }),
-        };
-      }
-
-      const counts = await repo.countFamilyAttemptsForItem(
-        joined.enrollment.id,
-        item.id
-      );
-      if (counts.completed > 0 && intent !== 'retry') {
-        throw ApiErrors.conflict(
-          'RETRY_INTENT_REQUIRED',
-          'error.attempt.retry_intent_required',
-          'Hoạt động này đã hoàn thành trước đó. Hãy chọn làm lại (intent=retry) nếu muốn thực hành thêm.'
-        );
-      }
-
-      const attemptId = generateUuidV7();
-      const attemptNumber = counts.total + 1;
-
-      const { createdAttempt, updatedEnrollment } = await repo.withTransaction(
-        async (tx) => {
-          const created = await repo.createFamilyAttempt(
-            {
-              id: attemptId,
-              enrollmentId: joined.enrollment.id,
-              familyWorkspaceId: joined.enrollment.familyWorkspaceId,
-              studentUserId: actor.actorUserId,
-              familyProgramVersionId: joined.version.id,
-              familyProgramItemId: item.id,
-              contentVersionId: item.contentVersionId,
-              attemptNumber,
-              startIdempotencyKey: input.idempotencyKey ?? null,
-              status: 'in_progress',
-              startedAt: now,
-              lastInteractedAt: now,
-              completedAt: null,
-              durationSeconds: 0,
-              usedAacSupport: Boolean(input.usedAacSupport),
-              usedReadAloud: Boolean(input.usedReadAloud),
-              aacTapCount: 0,
-              readAloudCount: 0,
-              responseSummaryJson: null,
-            },
-            tx
-          );
-
-          const updatedEnroll = await repo.recomputeAndUpdateEnrollmentProgress(
-            {
-              enrollmentId: joined.enrollment.id,
-              studentUserId: actor.actorUserId,
-              totalActivities: items.length,
-              fallbackActivityAt: now,
-              now,
-            },
-            tx
-          );
-
-          await safeAudit(
-            {
-              organizationId: null,
-              actorUserId: actor.actorUserId,
-              actorRole: 'student',
-              eventType: 'family.attempt_started',
-              targetType: 'family_activity_attempt',
-              targetId: attemptId,
-              ipPrefix: actor.ipPrefix,
-              metadata: {
-                enrollmentId: joined.enrollment.id,
-                familyProgramId: joined.program.id,
-                familyProgramVersionId: joined.version.id,
-                attemptNumber,
-              },
-              createdAt: now,
-            },
-            tx as unknown as AuditInsertExecutor
-          );
-
-          return {
-            createdAttempt: created,
-            updatedEnrollment: updatedEnroll,
-          };
+      } catch (err: unknown) {
+        if (err instanceof AppError) {
+          throw err;
         }
-      );
-
-      return {
-        httpStatus: 201 as const,
-        action: intent === 'retry' ? ('retried' as const) : ('started' as const),
-        attempt: buildFamilyAttemptView({
-          attempt: createdAttempt,
-          item,
-          turns: [],
-          enrollment: updatedEnrollment,
-        }),
-      };
+        if (isDuplicateKeyDbError(err)) {
+          throw ApiErrors.conflict(
+            'ATTEMPT_CONCURRENT_CONFLICT',
+            'error.attempt.concurrent_conflict',
+            'Lượt thực hành đang được khởi tạo đồng thời, vui lòng tải lại trạng thái hiện tại.'
+          );
+        }
+        if (isDatabaseError(err)) {
+          throw translateDatabaseError(err);
+        }
+        throw err;
+      }
     },
 
     async getFamilyAttemptForStudent(
@@ -2151,188 +2063,225 @@ export function createFamilyLearningService(deps?: FamilyLearningServiceDeps) {
       },
       actor: FamilyStudentActorContext
     ) {
-      const cleanStepKey = validateTurnTextAndPayload(
+      const cleanStepKey = validateRequiredAttemptStepKey(
         input.stepKey,
         'body.stepKey'
       );
-      if (!cleanStepKey) {
-        throw ApiErrors.validation([
-          {
-            field: 'body.stepKey',
-            code: 'REQUIRED',
-            messageKey: 'error.validation.required',
-            message: 'Mã bước hoạt động (stepKey) không được để trống.',
-          },
-        ]);
-      }
-
-      const cleanChoiceKey = validateTurnTextAndPayload(
+      const cleanChoiceKey = validateOptionalAttemptShortText(
         input.selectedChoiceKey,
         'body.selectedChoiceKey'
       );
-      const cleanEmotionKey = validateTurnTextAndPayload(
+      const cleanEmotionKey = validateOptionalAttemptShortText(
         input.selectedEmotionKey,
         'body.selectedEmotionKey'
       );
-      const cleanPayload = validateSafeTurnJsonObject(
-        input.responsePayloadJson,
-        'body.responsePayloadJson'
-      );
+      const cleanPayload =
+        validateSafeAttemptJsonObject(
+          input.responsePayloadJson,
+          'body.responsePayloadJson'
+        ) ?? null;
 
       const usedAac = Boolean(input.usedAac);
       const usedReadAloud = Boolean(input.usedReadAloud);
-      const aacTapDelta = input.aacTapDelta ?? (usedAac ? 1 : 0);
-      const readAloudDelta = input.readAloudDelta ?? (usedReadAloud ? 1 : 0);
       const now = nowFn();
 
-      const attempt = await repo.findFamilyAttemptByIdForStudent(
-        actor.actorUserId,
-        input.attemptId
-      );
-      if (!attempt) {
-        throw ApiErrors.notFound('Không tìm thấy lượt thực hành gia đình.');
-      }
+      try {
+        return await runWithTransientLockRetry(
+          async () =>
+            repo.withTransaction(async (tx) => {
+              const attempt = await repo.findFamilyAttemptByIdForStudent(
+                actor.actorUserId,
+                input.attemptId,
+                tx
+              );
+              if (!attempt) {
+                throw ApiErrors.notFound(
+                  'Không tìm thấy lượt thực hành gia đình.'
+                );
+              }
 
-      const joined = await repo.findActiveStudentEnrollmentById(
-        actor.actorUserId,
-        attempt.enrollmentId
-      );
-      if (!joined) {
-        throw ApiErrors.notFound('Không tìm thấy chương trình gia đình.');
-      }
+              const joined = await repo.findActiveStudentEnrollmentById(
+                actor.actorUserId,
+                attempt.enrollmentId,
+                tx
+              );
+              if (!joined) {
+                throw ApiErrors.notFound(
+                  'Không tìm thấy chương trình gia đình.'
+                );
+              }
 
-      const items = await repo.listProgramVersionItemsJoined(joined.version.id);
-      const item = items.find((i) => i.id === attempt.familyProgramItemId);
-      if (!item) {
-        throw ApiErrors.notFound('Không tìm thấy hoạt động trong chương trình.');
-      }
+              const items = await repo.listProgramVersionItemsJoined(
+                joined.version.id,
+                tx
+              );
+              const item = items.find(
+                (i) => i.id === attempt.familyProgramItemId
+              );
+              if (!item) {
+                throw ApiErrors.notFound(
+                  'Không tìm thấy hoạt động trong chương trình.'
+                );
+              }
 
-      if (attempt.status !== 'in_progress') {
-        throw ApiErrors.conflict(
-          'ATTEMPT_NOT_IN_PROGRESS',
-          'error.attempt.not_in_progress',
-          'Lượt thực hành này đã kết thúc, không thể lưu thêm bước tương tác.'
-        );
-      }
+              assertAttemptCanSaveTurn(attempt.status);
 
-      const existingTurn = await repo.findTurnForFamilyAttempt(
-        actor.actorUserId,
-        attempt.id,
-        input.turnIndex
-      );
-      if (existingTurn) {
-        if (
-          areTurnsIdentical(existingTurn, {
-            stepKey: cleanStepKey,
-            selectedChoiceKey: cleanChoiceKey,
-            selectedEmotionKey: cleanEmotionKey,
-            usedAac,
-            usedReadAloud,
-            responsePayloadJson: cleanPayload,
-          })
-        ) {
-          const turns = await repo.listTurnsForFamilyAttempt(
-            actor.actorUserId,
-            attempt.id
-          );
-          return {
-            httpStatus: 200 as const,
-            idempotentReplay: true,
-            savedTurn: toSafeTurnView(existingTurn),
-            attempt: buildFamilyAttemptView({
-              attempt,
-              item,
-              turns,
-              enrollment: joined.enrollment,
+              const existingTurn = await repo.findTurnForFamilyAttempt(
+                actor.actorUserId,
+                attempt.id,
+                input.turnIndex,
+                tx
+              );
+              if (existingTurn) {
+                if (
+                  areAttemptTurnPayloadsEquivalent(existingTurn, {
+                    stepKey: cleanStepKey,
+                    selectedChoiceKey: cleanChoiceKey,
+                    selectedEmotionKey: cleanEmotionKey,
+                    usedAac,
+                    usedReadAloud,
+                    responsePayloadJson: cleanPayload,
+                  })
+                ) {
+                  const [turns, refreshedEnroll] = await Promise.all([
+                    repo.listTurnsForFamilyAttempt(
+                      actor.actorUserId,
+                      attempt.id,
+                      tx
+                    ),
+                    repo.recomputeAndUpdateEnrollmentProgress(
+                      {
+                        enrollmentId: joined.enrollment.id,
+                        studentUserId: actor.actorUserId,
+                        totalActivities: items.length,
+                        fallbackActivityAt: attempt.lastInteractedAt,
+                        now,
+                      },
+                      tx
+                    ),
+                  ]);
+                  return {
+                    httpStatus: 200 as const,
+                    idempotentReplay: true,
+                    savedTurn: toSafeTurnView(existingTurn),
+                    attempt: buildFamilyAttemptView({
+                      attempt,
+                      item,
+                      turns,
+                      enrollment: refreshedEnroll,
+                    }),
+                  };
+                }
+
+                throw ApiErrors.conflict(
+                  'TURN_INDEX_CONFLICT',
+                  'error.attempt.turn_index_conflict',
+                  'Bước tương tác tại chỉ số này đã được lưu trước đó và không thể bị ghi đè.'
+                );
+              }
+
+              const turnId = generateUuidV7();
+              const nextDuration = computeMonotonicAttemptDuration(
+                attempt.durationSeconds,
+                input.durationSeconds
+              );
+              const nextTelemetry = resolveSupportTelemetryUpdate({
+                prevUsedAac: attempt.usedAacSupport,
+                prevUsedReadAloud: attempt.usedReadAloud,
+                prevAacTapCount: attempt.aacTapCount,
+                prevReadAloudCount: attempt.readAloudCount,
+                usedAacFlag: usedAac,
+                usedReadAloudFlag: usedReadAloud,
+                aacTapDelta: input.aacTapDelta,
+                readAloudDelta: input.readAloudDelta,
+              });
+
+              const turnRecord: typeof familyActivityAttemptTurns.$inferInsert =
+                {
+                  id: turnId,
+                  studentUserId: actor.actorUserId,
+                  attemptId: attempt.id,
+                  turnIndex: input.turnIndex,
+                  stepKey: cleanStepKey,
+                  selectedChoiceKey: cleanChoiceKey,
+                  selectedEmotionKey: cleanEmotionKey,
+                  usedAac,
+                  usedReadAloud,
+                  responsePayloadJson: cleanPayload,
+                  respondedAt: now,
+                };
+
+              const updatedAttempt = await repo.insertFamilyTurnAndUpdateAttempt(
+                {
+                  turn: turnRecord,
+                  attemptUpdate: {
+                    studentUserId: actor.actorUserId,
+                    attemptId: attempt.id,
+                    lastInteractedAt: now,
+                    durationSeconds: nextDuration,
+                    usedAacSupport: nextTelemetry.usedAacSupport,
+                    usedReadAloud: nextTelemetry.usedReadAloud,
+                    aacTapCount: nextTelemetry.aacTapCount,
+                    readAloudCount: nextTelemetry.readAloudCount,
+                  },
+                },
+                tx
+              );
+
+              const [turns, updatedEnrollment] = await Promise.all([
+                repo.listTurnsForFamilyAttempt(
+                  actor.actorUserId,
+                  attempt.id,
+                  tx
+                ),
+                repo.recomputeAndUpdateEnrollmentProgress(
+                  {
+                    enrollmentId: joined.enrollment.id,
+                    studentUserId: actor.actorUserId,
+                    totalActivities: items.length,
+                    fallbackActivityAt: now,
+                    now,
+                  },
+                  tx
+                ),
+              ]);
+
+              const savedTurn = turns.find(
+                (t) => t.turnIndex === input.turnIndex
+              )!;
+              return {
+                httpStatus: 201 as const,
+                idempotentReplay: false,
+                savedTurn: toSafeTurnView(savedTurn),
+                attempt: buildFamilyAttemptView({
+                  attempt: updatedAttempt,
+                  item,
+                  turns,
+                  enrollment: updatedEnrollment,
+                }),
+              };
             }),
-          };
-        }
-
-        throw ApiErrors.conflict(
-          'TURN_INDEX_CONFLICT',
-          'error.attempt.turn_index_conflict',
-          'Bước tương tác tại chỉ số này đã được lưu trước đó và không thể bị ghi đè.'
+          {
+            maxAttempts: 5,
+            retryOnDuplicateOnce: true,
+          }
         );
-      }
-
-      const turnId = generateUuidV7();
-      const nextDuration =
-        input.durationSeconds !== undefined
-          ? Math.max(attempt.durationSeconds, input.durationSeconds)
-          : attempt.durationSeconds;
-
-      const { updatedAttempt, turns, updatedEnrollment } =
-        await repo.withTransaction(async (tx) => {
-          const turnRecord: typeof familyActivityAttemptTurns.$inferInsert = {
-            id: turnId,
-            studentUserId: actor.actorUserId,
-            attemptId: attempt.id,
-            turnIndex: input.turnIndex,
-            stepKey: cleanStepKey,
-            selectedChoiceKey: cleanChoiceKey,
-            selectedEmotionKey: cleanEmotionKey,
-            usedAac,
-            usedReadAloud,
-            responsePayloadJson: cleanPayload,
-            respondedAt: now,
-          };
-
-          const updAttempt = await repo.insertFamilyTurnAndUpdateAttempt(
-            {
-              turn: turnRecord,
-              attemptUpdate: {
-                studentUserId: actor.actorUserId,
-                attemptId: attempt.id,
-                lastInteractedAt: now,
-                durationSeconds: nextDuration,
-                usedAacSupport:
-                  Boolean(attempt.usedAacSupport) ||
-                  usedAac ||
-                  aacTapDelta > 0,
-                usedReadAloud:
-                  Boolean(attempt.usedReadAloud) ||
-                  usedReadAloud ||
-                  readAloudDelta > 0,
-                aacTapCount: attempt.aacTapCount + aacTapDelta,
-                readAloudCount: attempt.readAloudCount + readAloudDelta,
-              },
-            },
-            tx
+      } catch (err: unknown) {
+        if (err instanceof AppError) {
+          throw err;
+        }
+        if (isDuplicateKeyDbError(err)) {
+          throw ApiErrors.conflict(
+            'TURN_INDEX_CONFLICT',
+            'error.attempt.turn_index_conflict',
+            'Bước tương tác tại chỉ số này đã tồn tại.'
           );
-
-          const [allTurns, updEnroll] = await Promise.all([
-            repo.listTurnsForFamilyAttempt(actor.actorUserId, attempt.id, tx),
-            repo.recomputeAndUpdateEnrollmentProgress(
-              {
-                enrollmentId: joined.enrollment.id,
-                studentUserId: actor.actorUserId,
-                totalActivities: items.length,
-                fallbackActivityAt: now,
-                now,
-              },
-              tx
-            ),
-          ]);
-
-          return {
-            updatedAttempt: updAttempt,
-            turns: allTurns,
-            updatedEnrollment: updEnroll,
-          };
-        });
-
-      const savedTurn = turns.find((t) => t.turnIndex === input.turnIndex)!;
-      return {
-        httpStatus: 201 as const,
-        idempotentReplay: false,
-        savedTurn: toSafeTurnView(savedTurn),
-        attempt: buildFamilyAttemptView({
-          attempt: updatedAttempt,
-          item,
-          turns,
-          enrollment: updatedEnrollment,
-        }),
-      };
+        }
+        if (isDatabaseError(err)) {
+          throw translateDatabaseError(err);
+        }
+        throw err;
+      }
     },
 
     async completeFamilyAttempt(
@@ -2346,134 +2295,177 @@ export function createFamilyLearningService(deps?: FamilyLearningServiceDeps) {
         responseSummaryJson?: Record<string, unknown> | null;
       },
       actor: FamilyStudentActorContext
-    ): Promise<SafeFamilyStudentAttemptView> {
-      const cleanSummary = validateSafeTurnJsonObject(
+    ): Promise<{
+      idempotentReplay: boolean;
+      attempt: SafeFamilyStudentAttemptView;
+    }> {
+      const cleanSummary = validateSafeAttemptJsonObject(
         input.responseSummaryJson,
         'body.responseSummaryJson'
       );
-
-      const attempt = await repo.findFamilyAttemptByIdForStudent(
-        actor.actorUserId,
-        input.attemptId
-      );
-      if (!attempt) {
-        throw ApiErrors.notFound('Không tìm thấy lượt thực hành gia đình.');
-      }
-
-      const joined = await repo.findActiveStudentEnrollmentById(
-        actor.actorUserId,
-        attempt.enrollmentId
-      );
-      if (!joined) {
-        throw ApiErrors.notFound('Không tìm thấy chương trình gia đình.');
-      }
-
-      const items = await repo.listProgramVersionItemsJoined(joined.version.id);
-      const item = items.find((i) => i.id === attempt.familyProgramItemId);
-      if (!item) {
-        throw ApiErrors.notFound('Không tìm thấy hoạt động trong chương trình.');
-      }
-
-      if (attempt.status === 'completed') {
-        const turns = await repo.listTurnsForFamilyAttempt(
-          actor.actorUserId,
-          attempt.id
-        );
-        return buildFamilyAttemptView({
-          attempt,
-          item,
-          turns,
-          enrollment: joined.enrollment,
-        });
-      }
-
-      if (attempt.status !== 'in_progress') {
-        throw ApiErrors.conflict(
-          'ATTEMPT_NOT_IN_PROGRESS',
-          'error.attempt.not_in_progress',
-          'Lượt thực hành này đã dừng và không thể hoàn thành.'
-        );
-      }
-
       const now = nowFn();
-      const nextDuration =
-        input.durationSeconds !== undefined
-          ? Math.max(attempt.durationSeconds, input.durationSeconds)
-          : attempt.durationSeconds;
 
-      const { updatedAttempt, turns, updatedEnrollment } =
-        await repo.withTransaction(async (tx) => {
-          const updAttempt = await repo.updateFamilyAttemptTerminalState(
-            {
-              studentUserId: actor.actorUserId,
-              attemptId: attempt.id,
-              status: 'completed',
-              completedAt: now,
-              lastInteractedAt: now,
-              durationSeconds: nextDuration,
-              usedAacSupport:
-                Boolean(attempt.usedAacSupport) ||
-                Boolean(input.usedAacSupport) ||
-                (input.aacTapDelta ?? 0) > 0,
-              usedReadAloud:
-                Boolean(attempt.usedReadAloud) ||
-                Boolean(input.usedReadAloud) ||
-                (input.readAloudDelta ?? 0) > 0,
-              aacTapCount: attempt.aacTapCount + (input.aacTapDelta ?? 0),
-              readAloudCount:
-                attempt.readAloudCount + (input.readAloudDelta ?? 0),
-              responseSummaryJson: cleanSummary ?? attempt.responseSummaryJson,
-            },
-            tx
-          );
+      try {
+        return await runWithTransientLockRetry(async () =>
+          repo.withTransaction(async (tx) => {
+            const attempt = await repo.findFamilyAttemptByIdForStudent(
+              actor.actorUserId,
+              input.attemptId,
+              tx
+            );
+            if (!attempt) {
+              throw ApiErrors.notFound(
+                'Không tìm thấy lượt thực hành gia đình.'
+              );
+            }
 
-          const [allTurns, updEnroll] = await Promise.all([
-            repo.listTurnsForFamilyAttempt(actor.actorUserId, attempt.id, tx),
-            repo.recomputeAndUpdateEnrollmentProgress(
+            const joined = await repo.findActiveStudentEnrollmentById(
+              actor.actorUserId,
+              attempt.enrollmentId,
+              tx
+            );
+            if (!joined) {
+              throw ApiErrors.notFound(
+                'Không tìm thấy chương trình gia đình.'
+              );
+            }
+
+            const items = await repo.listProgramVersionItemsJoined(
+              joined.version.id,
+              tx
+            );
+            const item = items.find(
+              (i) => i.id === attempt.familyProgramItemId
+            );
+            if (!item) {
+              throw ApiErrors.notFound(
+                'Không tìm thấy hoạt động trong chương trình.'
+              );
+            }
+
+            const completeCheck = assertAttemptCanComplete(attempt.status);
+            if (completeCheck === 'replay') {
+              const [turns, refreshedEnroll] = await Promise.all([
+                repo.listTurnsForFamilyAttempt(
+                  actor.actorUserId,
+                  attempt.id,
+                  tx
+                ),
+                repo.recomputeAndUpdateEnrollmentProgress(
+                  {
+                    enrollmentId: joined.enrollment.id,
+                    studentUserId: actor.actorUserId,
+                    totalActivities: items.length,
+                    fallbackActivityAt: attempt.lastInteractedAt,
+                    now,
+                  },
+                  tx
+                ),
+              ]);
+              return {
+                idempotentReplay: true,
+                attempt: buildFamilyAttemptView({
+                  attempt,
+                  item,
+                  turns,
+                  enrollment: refreshedEnroll,
+                }),
+              };
+            }
+
+            const nextDuration = computeMonotonicAttemptDuration(
+              attempt.durationSeconds,
+              input.durationSeconds
+            );
+            const nextTelemetry = resolveSupportTelemetryUpdate({
+              prevUsedAac: attempt.usedAacSupport,
+              prevUsedReadAloud: attempt.usedReadAloud,
+              prevAacTapCount: attempt.aacTapCount,
+              prevReadAloudCount: attempt.readAloudCount,
+              usedAacFlag: input.usedAacSupport,
+              usedReadAloudFlag: input.usedReadAloud,
+              aacTapDelta: input.aacTapDelta,
+              readAloudDelta: input.readAloudDelta,
+            });
+
+            const updatedAttempt = await repo.updateFamilyAttemptTerminalState(
               {
-                enrollmentId: joined.enrollment.id,
                 studentUserId: actor.actorUserId,
-                totalActivities: items.length,
-                fallbackActivityAt: now,
-                now,
+                attemptId: attempt.id,
+                status: 'completed',
+                completedAt: now,
+                lastInteractedAt: now,
+                durationSeconds: nextDuration,
+                usedAacSupport: nextTelemetry.usedAacSupport,
+                usedReadAloud: nextTelemetry.usedReadAloud,
+                aacTapCount: nextTelemetry.aacTapCount,
+                readAloudCount: nextTelemetry.readAloudCount,
+                responseSummaryJson:
+                  cleanSummary !== undefined
+                    ? cleanSummary
+                    : attempt.responseSummaryJson,
               },
               tx
-            ),
-          ]);
+            );
 
-          await safeAudit(
-            {
-              organizationId: null,
-              actorUserId: actor.actorUserId,
-              actorRole: 'student',
-              eventType: 'family.attempt_completed',
-              targetType: 'family_activity_attempt',
-              targetId: attempt.id,
-              ipPrefix: actor.ipPrefix,
-              metadata: {
-                enrollmentId: joined.enrollment.id,
-                completedActivities: updEnroll.completedActivities,
-                totalActivities: updEnroll.totalActivities,
-                learningStatus: updEnroll.learningStatus,
+            const [turns, updatedEnrollment] = await Promise.all([
+              repo.listTurnsForFamilyAttempt(
+                actor.actorUserId,
+                attempt.id,
+                tx
+              ),
+              repo.recomputeAndUpdateEnrollmentProgress(
+                {
+                  enrollmentId: joined.enrollment.id,
+                  studentUserId: actor.actorUserId,
+                  totalActivities: items.length,
+                  fallbackActivityAt: now,
+                  now,
+                },
+                tx
+              ),
+            ]);
+
+            await safeAudit(
+              {
+                organizationId: null,
+                actorUserId: actor.actorUserId,
+                actorRole: 'student',
+                eventType: 'family.attempt_completed',
+                targetType: 'family_activity_attempt',
+                targetId: attempt.id,
+                ipPrefix: actor.ipPrefix,
+                metadata: {
+                  enrollmentId: joined.enrollment.id,
+                  completedActivities: updatedEnrollment.completedActivities,
+                  totalActivities: updatedEnrollment.totalActivities,
+                  learningStatus: updatedEnrollment.learningStatus,
+                },
+                createdAt: now,
               },
-              createdAt: now,
-            },
-            tx as unknown as AuditInsertExecutor
-          );
+              tx as unknown as AuditInsertExecutor
+            );
 
-          return {
-            updatedAttempt: updAttempt,
-            turns: allTurns,
-            updatedEnrollment: updEnroll,
-          };
-        });
-
-      return buildFamilyAttemptView({
-        attempt: updatedAttempt,
-        item,
-        turns,
-        enrollment: updatedEnrollment,
-      });
+            return {
+              idempotentReplay: false,
+              attempt: buildFamilyAttemptView({
+                attempt: updatedAttempt,
+                item,
+                turns,
+                enrollment: updatedEnrollment,
+              }),
+            };
+          })
+        );
+      } catch (err: unknown) {
+        if (err instanceof AppError) {
+          throw err;
+        }
+        if (isDatabaseError(err)) {
+          throw translateDatabaseError(err);
+        }
+        throw err;
+      }
     },
 
     async abandonFamilyAttempt(
@@ -2483,7 +2475,10 @@ export function createFamilyLearningService(deps?: FamilyLearningServiceDeps) {
         durationSeconds?: number;
       },
       actor: FamilyStudentActorContext
-    ): Promise<SafeFamilyStudentAttemptView> {
+    ): Promise<{
+      idempotentReplay: boolean;
+      attempt: SafeFamilyStudentAttemptView;
+    }> {
       if (input.confirmed !== true) {
         throw new AppError({
           httpStatus: 400,
@@ -2494,117 +2489,152 @@ export function createFamilyLearningService(deps?: FamilyLearningServiceDeps) {
         });
       }
 
-      const attempt = await repo.findFamilyAttemptByIdForStudent(
-        actor.actorUserId,
-        input.attemptId
-      );
-      if (!attempt) {
-        throw ApiErrors.notFound('Không tìm thấy lượt thực hành gia đình.');
-      }
-
-      const joined = await repo.findActiveStudentEnrollmentById(
-        actor.actorUserId,
-        attempt.enrollmentId
-      );
-      if (!joined) {
-        throw ApiErrors.notFound('Không tìm thấy chương trình gia đình.');
-      }
-
-      const items = await repo.listProgramVersionItemsJoined(joined.version.id);
-      const item = items.find((i) => i.id === attempt.familyProgramItemId);
-      if (!item) {
-        throw ApiErrors.notFound('Không tìm thấy hoạt động trong chương trình.');
-      }
-
-      if (attempt.status === 'abandoned') {
-        const turns = await repo.listTurnsForFamilyAttempt(
-          actor.actorUserId,
-          attempt.id
-        );
-        return buildFamilyAttemptView({
-          attempt,
-          item,
-          turns,
-          enrollment: joined.enrollment,
-        });
-      }
-
-      if (attempt.status !== 'in_progress') {
-        throw ApiErrors.conflict(
-          'ATTEMPT_NOT_IN_PROGRESS',
-          'error.attempt.not_in_progress',
-          'Chỉ có thể tạm dừng lượt thực hành đang diễn ra.'
-        );
-      }
-
       const now = nowFn();
-      const nextDuration =
-        input.durationSeconds !== undefined
-          ? Math.max(attempt.durationSeconds, input.durationSeconds)
-          : attempt.durationSeconds;
 
-      const { updatedAttempt, turns, updatedEnrollment } =
-        await repo.withTransaction(async (tx) => {
-          const updAttempt = await repo.updateFamilyAttemptTerminalState(
-            {
-              studentUserId: actor.actorUserId,
-              attemptId: attempt.id,
-              status: 'abandoned',
-              completedAt: null,
-              lastInteractedAt: now,
-              durationSeconds: nextDuration,
-              usedAacSupport: Boolean(attempt.usedAacSupport),
-              usedReadAloud: Boolean(attempt.usedReadAloud),
-              aacTapCount: attempt.aacTapCount,
-              readAloudCount: attempt.readAloudCount,
-            },
-            tx
-          );
+      try {
+        return await runWithTransientLockRetry(async () =>
+          repo.withTransaction(async (tx) => {
+            const attempt = await repo.findFamilyAttemptByIdForStudent(
+              actor.actorUserId,
+              input.attemptId,
+              tx
+            );
+            if (!attempt) {
+              throw ApiErrors.notFound(
+                'Không tìm thấy lượt thực hành gia đình.'
+              );
+            }
 
-          const [allTurns, updEnroll] = await Promise.all([
-            repo.listTurnsForFamilyAttempt(actor.actorUserId, attempt.id, tx),
-            repo.recomputeAndUpdateEnrollmentProgress(
+            const joined = await repo.findActiveStudentEnrollmentById(
+              actor.actorUserId,
+              attempt.enrollmentId,
+              tx
+            );
+            if (!joined) {
+              throw ApiErrors.notFound(
+                'Không tìm thấy chương trình gia đình.'
+              );
+            }
+
+            const items = await repo.listProgramVersionItemsJoined(
+              joined.version.id,
+              tx
+            );
+            const item = items.find(
+              (i) => i.id === attempt.familyProgramItemId
+            );
+            if (!item) {
+              throw ApiErrors.notFound(
+                'Không tìm thấy hoạt động trong chương trình.'
+              );
+            }
+
+            const abandonCheck = assertAttemptCanAbandon(attempt.status);
+            if (abandonCheck === 'replay') {
+              const [turns, refreshedEnroll] = await Promise.all([
+                repo.listTurnsForFamilyAttempt(
+                  actor.actorUserId,
+                  attempt.id,
+                  tx
+                ),
+                repo.recomputeAndUpdateEnrollmentProgress(
+                  {
+                    enrollmentId: joined.enrollment.id,
+                    studentUserId: actor.actorUserId,
+                    totalActivities: items.length,
+                    fallbackActivityAt: attempt.lastInteractedAt,
+                    now,
+                  },
+                  tx
+                ),
+              ]);
+              return {
+                idempotentReplay: true,
+                attempt: buildFamilyAttemptView({
+                  attempt,
+                  item,
+                  turns,
+                  enrollment: refreshedEnroll,
+                }),
+              };
+            }
+
+            const nextDuration = computeMonotonicAttemptDuration(
+              attempt.durationSeconds,
+              input.durationSeconds
+            );
+
+            const updatedAttempt = await repo.updateFamilyAttemptTerminalState(
               {
-                enrollmentId: joined.enrollment.id,
                 studentUserId: actor.actorUserId,
-                totalActivities: items.length,
-                fallbackActivityAt: now,
-                now,
+                attemptId: attempt.id,
+                status: 'abandoned',
+                completedAt: null,
+                lastInteractedAt: now,
+                durationSeconds: nextDuration,
+                usedAacSupport: Boolean(attempt.usedAacSupport),
+                usedReadAloud: Boolean(attempt.usedReadAloud),
+                aacTapCount: attempt.aacTapCount,
+                readAloudCount: attempt.readAloudCount,
               },
               tx
-            ),
-          ]);
+            );
 
-          await safeAudit(
-            {
-              organizationId: null,
-              actorUserId: actor.actorUserId,
-              actorRole: 'student',
-              eventType: 'family.attempt_abandoned',
-              targetType: 'family_activity_attempt',
-              targetId: attempt.id,
-              ipPrefix: actor.ipPrefix,
-              metadata: {
-                enrollmentId: joined.enrollment.id,
+            const [turns, updatedEnrollment] = await Promise.all([
+              repo.listTurnsForFamilyAttempt(
+                actor.actorUserId,
+                attempt.id,
+                tx
+              ),
+              repo.recomputeAndUpdateEnrollmentProgress(
+                {
+                  enrollmentId: joined.enrollment.id,
+                  studentUserId: actor.actorUserId,
+                  totalActivities: items.length,
+                  fallbackActivityAt: now,
+                  now,
+                },
+                tx
+              ),
+            ]);
+
+            await safeAudit(
+              {
+                organizationId: null,
+                actorUserId: actor.actorUserId,
+                actorRole: 'student',
+                eventType: 'family.attempt_abandoned',
+                targetType: 'family_activity_attempt',
+                targetId: attempt.id,
+                ipPrefix: actor.ipPrefix,
+                metadata: {
+                  enrollmentId: joined.enrollment.id,
+                },
+                createdAt: now,
               },
-              createdAt: now,
-            },
-            tx as unknown as AuditInsertExecutor
-          );
+              tx as unknown as AuditInsertExecutor
+            );
 
-          return {
-            updatedAttempt: updAttempt,
-            turns: allTurns,
-            updatedEnrollment: updEnroll,
-          };
-        });
-
-      return buildFamilyAttemptView({
-        attempt: updatedAttempt,
-        item,
-        turns,
-        enrollment: updatedEnrollment,
-      });
+            return {
+              idempotentReplay: false,
+              attempt: buildFamilyAttemptView({
+                attempt: updatedAttempt,
+                item,
+                turns,
+                enrollment: updatedEnrollment,
+              }),
+            };
+          })
+        );
+      } catch (err: unknown) {
+        if (err instanceof AppError) {
+          throw err;
+        }
+        if (isDatabaseError(err)) {
+          throw translateDatabaseError(err);
+        }
+        throw err;
+      }
     },
 
     // =========================================================================

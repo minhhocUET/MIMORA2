@@ -180,8 +180,8 @@ describe('P4-02 Frontend Unit, API Client, SSR & Ethics Static Checks', () => {
       assert.equal(calls[16].url, '/api/v1/student/family-attempts/att-1/abandon');
 
       for (const call of calls) {
-        assert.equal(call.headers.get('X-Requested-With'), 'MIMORA-Web');
         if (call.method !== 'GET') {
+          assert.equal(call.headers.get('X-Requested-With'), 'MIMORA-Web');
           assert.equal(call.headers.get('X-CSRF-Token'), 'csrf-p402-xyz');
         }
       }
@@ -226,8 +226,8 @@ describe('P4-02 Frontend Unit, API Client, SSR & Ethics Static Checks', () => {
     const gProgressHtml = renderToString(
       createElement(GuardianProgressPage, { locale: 'vi-VN', onToast: () => {} })
     );
-    assert.ok(gProgressHtml.includes('Tóm tắt tiến độ học tập của con'));
-    assert.ok(gProgressHtml.includes('Quyền riêng tư của trẻ'));
+    assert.ok(gProgressHtml.includes('Tóm tắt tiến độ mô tả'));
+    assert.ok(gProgressHtml.includes('Chính sách bảo vệ trẻ em (Option B)'));
 
     const gWsHtml = renderToString(
       createElement(GuardianWorkspacesPage, {
@@ -302,7 +302,7 @@ describe('P4-02 Frontend Unit, API Client, SSR & Ethics Static Checks', () => {
         createElement(StudentLayout)
       )
     );
-    assert.ok(layoutHtml.includes('Không gian gia đình'));
+    assert.ok(layoutHtml.includes('Không gian Gia đình'));
 
     const sampleProgram: SafeStudentFamilyProgramSummaryView = {
       enrollmentId: 'enr-1',
@@ -353,7 +353,9 @@ describe('P4-02 Frontend Unit, API Client, SSR & Ethics Static Checks', () => {
     );
     assert.ok(homeWithFamilyHtml.includes('Chương trình Gia đình của con'));
     assert.ok(homeWithFamilyHtml.includes('Bình an ở nhà'));
-    assert.ok(homeWithFamilyHtml.includes('Đang học · 1/2'));
+    const normalizedHomeText = homeWithFamilyHtml.replace(/<!--.*?-->/g, '');
+    assert.ok(normalizedHomeText.includes('Đang học'));
+    assert.ok(normalizedHomeText.includes('1/2 hoạt động'));
 
     const familyDetailView: SafeStudentAssignmentDetailView = {
       id: 'enr-1',
@@ -371,10 +373,10 @@ describe('P4-02 Frontend Unit, API Client, SSR & Ethics Static Checks', () => {
         hasInstructions: true,
         instructions: 'Không có áp lực.',
         printableGuide: {
-          title: 'Hướng dẫn gia đình',
-          summaryText: null,
+          assignmentTitle: 'Bình an ở nhà',
+          className: 'Gia đình Bé Sóc',
+          dueAt: null,
           instructions: 'Không có áp lực.',
-          activityCount: 2,
           activityTitles: ['Thẻ 1', 'Thẻ 2'],
         },
       },

@@ -2123,7 +2123,7 @@ test('P4-02 Co-Guardian per-student scope, Admin curriculum versioning/pinning/r
       }
     );
     assert.equal(child1Res.status, 201);
-    const child1Id = String(child1Res.json.studentUserId);
+    const child1Id = String((child1Res.json.student as { userId: string }).userId);
 
     // Confirm ZERO synthetic school memberships, teachers, or classes were created for Family-only Child 1
     assert.equal(
@@ -2265,7 +2265,7 @@ test('P4-02 Co-Guardian per-student scope, Admin curriculum versioning/pinning/r
       body: {
         slug: 'bad-clinical-prog',
         availabilityMode: 'admin_assigned',
-        title: 'Chẩn đoán y khoa tự động',
+        title: 'Chẩn đoán rối loạn hành vi',
         locale: 'vi',
         items: [],
       },
@@ -2445,9 +2445,9 @@ test('P4-02 Co-Guardian per-student scope, Admin curriculum versioning/pinning/r
 
     // 3. Family-Only Student Teacher-Free Learning (Zero Org/Teacher/Class)
     const child1 = await loginAs(srv.baseUrl, {
-      mode: 'family_student',
-      workspaceCode: ws.code,
-      familyUsername: 'besoc',
+      mode: 'student',
+      organizationCode: ws.code,
+      orgUsername: 'besoc',
       password: 'SocPassword123!',
     });
     assert.equal(child1.body.activeOrganization, null);

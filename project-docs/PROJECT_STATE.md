@@ -1,8 +1,8 @@
 # MIMORA — Project State
 
-**Last updated:** 2026-11-18  
-**Current phase:** Phase 2 (Backend Core — Completed)  
-**Current task:** P2-07 — Private Teacher Observations, Student Profiles & Privacy-Preserving Admin Insights (+ Controlled Live TiDB & 22-Table Parity Verification)
+**Last updated:** 2026-11-19  
+**Current phase:** Phase 4 — Attempt-Engine Parity Hardening (`KI-12` complete at code/mock level; prior `P4-02.1` persistence readiness preserved)  
+**Current task:** KI-12 — Harmonize School and Family Attempt-Engine Behavior (`P4-01`/`P4-02` migrations STILL NOT executed on TiDB; stopped before `P4-03`)
 
 ---
 
@@ -68,77 +68,62 @@
 
 ## 7. Kiến trúc kỹ thuật hiện tại (Implemented vs Generated vs Service-Enforced vs Unverified)
 
-- **Implemented (Phase 1 Foundation + Phase 2 Core Complete: P2-01 through P2-07):**
-  - `server.ts`, `src/server/config/env.ts`, `src/server/db/tidb.ts`, `src/server/db/uuid.ts`, `src/server/http/{errors,middleware,validation}.ts`: Runtime Express + Vite, `getDb()` / `withTransaction()` schema-typed trên TiDB, Vietnamese-first API error contract, Zod v4 request validation.
-  - `src/server/security/{password-hash,scrypt-limiter,session,csrf,rate-limit}.ts` & `src/server/middleware/auth.ts`: Custom Auth (`scrypt$v1$` + `ScryptConcurrencyLimiter` max 4), SHA-256 hashed server-side `sessions` (`HttpOnly` cookie, rotation, revocation), Origin/Referer + custom header + session-bound HMAC CSRF, rate limiting, và `requireAuth` / `requireOrgContext` / `requireRole`.
-  - `src/server/services/audit.service.ts`: Append-only audit writer với allowlist `AUDIT_EVENT_TYPES` và kiểm tra đệ quy chặn rò rỉ dữ liệu nhạy cảm.
-  - `src/server/repositories/auth.repository.ts`, `src/server/services/auth.service.ts`, `src/server/routes/auth.routes.ts`: Admin/Teacher login, Student email-less login (`orgCode + orgUsername`), multi-org `switchOrganization`, `changePassword`, `logout`, `/me`.
-  - `src/server/repositories/{org,membership,class,csv-import}.repository.ts`, `src/server/services/{org,membership,class,csv-import}.service.ts`, `src/server/routes/{organizations,admin-users,classes}.routes.ts`: Organizations CRUD, Teacher/Student provisioning & memberships (chặn chuyển trường học sinh theo PO deferral `409 STUDENT_TRANSFER_POLICY_DEFERRED`), Classes/Teachers/Enrollment roster (bảo toàn lịch sử `transferred_out`/`archived` & re-enrollment), và RFC-4180 memory-only CSV import (preview + partial-row commit, không lưu plaintext password). *(Lưu ý: `org.service.ts` và `class.service.ts` tái sử dụng event allowlist `account.*`/`membership.*` trong `AUDIT_EVENT_TYPES` do chưa được phép sửa `_shared.ts`.)*
-  - `src/server/validators/content-payload.schema.ts`, `src/server/repositories/content.repository.ts`, `src/server/services/content.service.ts`, `src/server/routes/{admin-content,library}.routes.ts`: Shared SEL Content Library với Zod payload + safety validation (`scanUnsafeSelText`) cho 5 canonical types (`emotion_card`, `situation_card`, `action_card`, `social_story_card`, `communication_card`), versioning bất biến, multi-round `submit`/`approve`/`reject`/`resubmit`/`publish`/`archive`, `.for('update')` concurrency control, creator/reviewer separation (`>=2` Admin chặn self-approve `403`; `===1` Admin cho phép kèm `content.self_approved`), và Teacher published-only library (`GET /api/v1/library/content*`).
-  - `src/server/repositories/assignment.repository.ts`, `src/server/services/assignment.service.ts`, `src/server/routes/assignments.routes.ts`: Class Assignments, Published Content Version Pinning (`assignment_items.content_version_id -> content_versions.id`), Creator-only mutations vs Co-teacher read-only (`403` cho non-creator), Target Student validation & activity-removal lock (`409 TARGET_HAS_ACTIVITY`), Teacher-authored Home Practice & printable guide DTO, Informational Due Dates (không chặn overdue), Read-only progress summary (`GET /api/v1/assignments/:assignmentId/progress`), và Student self-only assignment APIs (`GET /api/v1/student/assignments*`).
-  - `src/server/repositories/attempt.repository.ts`, `src/server/services/attempt.service.ts`, `src/server/routes/attempts.routes.ts`: Student Learning Attempts lifecycle (`start-or-resume`, `get`, `turns`, `complete`, `abandon`), khóa `FOR UPDATE` toàn bộ truy vấn trong transaction (`REPEATABLE READ` current read trên TiDB), bảo vệ trùng `in_progress` (`uq_attempts_single_in_progress`), idempotency key & retry chủ động (`intent='retry'`), thứ tự turn & replay/conflict (`uq_turns_attempt_idx`), đồng bộ nguyên tử `assignment_progress` (không đếm trùng khi retry), tùy chọn telemetry AAC/Read-Aloud trung tính (ngữ cảnh hỗ trợ thuần túy, không suy diễn năng lực hay đánh giá đúng/sai), bảo toàn lượt `in_progress` khi hết hạn phiên (tuyệt đối không auto-abandon), giữ bản đọc-only khi bài tập đóng, không sao chép lựa chọn/cảm xúc học sinh vào `audit_logs`, và Teacher assigned-class read-only review (`GET /api/v1/assignments/:assignmentId/attempts*`).
-  - `src/server/repositories/{observation,goal,insight}.repository.ts`, `src/server/services/{observation,goal,insight}.service.ts`, `src/server/routes/{observations,goals,admin-insights}.routes.ts`: Private Teacher Observations cô lập tuyệt đối theo `author_teacher_membership_id` ở tầng DB (`404` cho co-teacher, `403` cho Admin/Student), suy diễn/khóa `assignmentId` & `classId` trong `withTransaction` khi liên kết `attemptId`, soft-delete (`deleted_at`); Student Profiles & SEL Goals (`support_preferences_json` hỗ trợ tiếp cận/AAC/read-aloud, chặn key lâm sàng/xếp hạng/gamification, `DELETE /api/v1/goals/:goalId` chuyển `status='archived'`, Student chỉ đọc dữ liệu của chính mình qua `/api/v1/student/{profile,goals}`); và Privacy-Preserving Admin Insights (`GET /api/v1/admin/insights`, allowlist bộ lọc chu kỳ cố định chống suy diễn sai phân, ngưỡng `k = 5` + kiểm tra phần bù + complementary suppression trả `null`, hàm rollup tường minh `computeAndUpsertOrgInsightSnapshots`). *(Lưu ý: `AUDIT_EVENT_TYPES` trong `_shared.ts` chưa có event chuyên biệt cho `observation.*`/`goal.*`/`insight.*`, các truy cập bị từ chối phát event bảo mật có sẵn không chứa văn bản nhạy cảm.)*
-- **Migrated & Verified Runtime Connectivity, DML & 22-Table Parity (TiDB `test`):**
-  - `drizzle/0000_mimora_mvp_init.sql` (SHA-256 `eec9f4669bf5f7850eb2cf5ca7f975585609334722e44ee4b5339ada2a16c765`) thực thi trên TiDB `test`: `23` base tables, `51` FKs, `5` virtual generated columns.
-  - Đã xác minh live DML + transaction + composite/unique/virtual-column guards qua tài khoản runtime `3rtMqHg6yoxMH5d.mimora_runtime@%` cho `P2-02` Auth, `P2-03` Orgs/Users/Memberships/Classes/CSV (`src/server/integration/live-tidb.integration.ts`), `P2-04` Content Library & Multi-Round Approvals (`src/server/integration/p2-04-live-tidb.integration.ts`), `P2-05` Assignments & Published Pinning (`src/server/integration/p2-05-live-tidb.integration.ts`), `P2-06` Learning Attempts & Concurrency (`src/server/integration/p2-06-live-tidb.integration.ts`, `runTag = p206test-97368327`), và `P2-07` Observations/Profiles/Goals/Insights + 22-Table `SHOW CREATE TABLE` Parity (`src/server/integration/p2-07-live-tidb.integration.ts`, `runTag = p207test-42cc2722`).
-- **Pending Operator Secret Cleanup:**
-  - `TIDB_MIGRATOR_USER` và `TIDB_MIGRATOR_PASSWORD` nếu còn trong Google AI Studio Secrets cần operator gỡ thủ công qua AI Studio UI.
-- **Chưa triển khai (Planned):**
-  - Giao diện Frontend chính thức (Phase 3), production static serving (`KI-04`), và cơ chế kích hoạt job rollup định kỳ ngoài container cho `org_insight_daily_snapshots`.
+- **Implemented — Phase 1–2 School Core (`P2-01`..`P2-07`), Phase 3 Frontend UI (`P3-01`..`P3-04`), & Phase 4 Guardian/Family Code (`P4-01`..`P4-02.1`):**
+  - **Core Runtime & Explicit 3-Mode Database Policy (`P4-02.1`):** `server.ts`, `src/server/config/env.ts`, `src/server/db/tidb.ts`, `src/server/db/uuid.ts`, `src/server/http/{errors,middleware,validation}.ts`:
+    - `'tidb'`: yêu cầu đầy đủ 5 biến `TIDB_*` hợp lệ (`MIMORA_DB_MODE` trống / `auto` / `tidb`), dùng `mysql2/promise` + `drizzle-orm` (TLS `>=1.2`, `rejectUnauthorized: true`).
+    - `'mock'`: chỉ kích hoạt tường minh khi `MIMORA_DB_MODE=mock` và `NODE_ENV !== 'production'` (bị chặn trong `production` với `DB_CONFIG_INVALID`). `checkTiDbHealth()` luôn trả `{ ok: false, status: 'error', mode: 'mock', database: 'mock_ephemeral', durablePersistence: false, error: { code: 'DB_MOCK_MODE_ACTIVE' } }` — tuyệt đối không mạo nhận kết nối TiDB thật.
+    - `'unconfigured'`: thiếu toàn bộ hoặc một phần `TIDB_*` hoặc sai `TIDB_PORT` / `MIMORA_DB_MODE` -> giữ `/api/v1/health` HTTP `200` (Preview boot), nhưng `getDb()` / `withTransaction()` ném `AppError(500, 'DB_CONFIG_MISSING' | 'DB_CONFIG_INVALID')` để chặn silent mock writes, và `/api/v1/db/health` trả HTTP `500` JSON chi tiết (`mode`, `database: 'disconnected'`, `durablePersistence: false`).
+  - **Phase 2 School Core (`P2-01`..`P2-07`):** Custom Auth (`scrypt$v1$` + server-side `sessions` + HMAC CSRF + `ScryptConcurrencyLimiter`), Organizations/Memberships/Classes/CSV Import, Shared SEL Content Library & Multi-Round Approvals, Class Assignments & Published Pinning, Student Learning Attempts (`attempt.service.ts`), Private Teacher Observations, Student Profiles/Goals, và k-anonymity (`k = 5`) Admin Insights.
+  - **Phase 3 Frontend UI (`P3-01`..`P3-04`):** React 19 + Vite SPA (`src/layouts/*`, `src/components/{auth,admin,teacher,student,guardian,shared,ui}/*`, `src/i18n/{vi,en}.ts`), gồm Admin, Teacher, Student (social story, emotion/body-map/intensity/fact-vs-guess/strategy-deck/communication-board + AAC bar), và Guardian portals.
+  - **Phase 4 Guardian & Family Learning Code (`P4-01`..`P4-02`):**
+    - `P4-01` (`src/server/db/schema/family.ts`, `src/server/services/guardian.service.ts`, `src/server/routes/guardian.routes.ts`): Self-registration Guardian email/password, email verification token (SHA-256 hashed), school-initiated link invitation (`guardian_link_invitations`), guardian-student linking (`guardian_student_links`), shared consent/telemetry visibility, và `GET /api/v1/guardian/*`.
+    - `P4-02` (`src/server/db/schema/family-learning.ts`, `src/server/services/family-learning.service.ts`, `src/server/routes/family-learning.routes.ts`): Guardian personal workspaces (`family_workspaces`), child memberships (`family_child_memberships`), family content library/custom cards (`family_content_items`, `family_content_versions`), family assignments (`family_assignments`, `family_assignment_items`), và family attempts/turns/progress (`family_attempts`, `family_attempt_turns`, `family_progress`).
+    - `P4-02.1` (`src/server/db/tidb.ts`, `server.ts`, `project-docs/TIDB_MIGRATION_RUNBOOK.md`): Triển khai chính sách DB 3 chế độ tường minh (`tidb` | `mock` | `unconfigured`), preflight DDL tĩnh 36 bảng, và runbook kiểm soát migration `0001` & `0002`.
+    - `KI-12` (`src/server/services/attempt-shared.ts`, `attempt.service.ts`, `family-learning.service.ts`, `family-learning.repository.ts`, `attempts.routes.ts`, `family-learning.routes.ts`, `attempt-parity.test.ts`, `project-docs/ATTEMPT_ENGINE_PARITY.md`): Đồng bộ hóa toàn bộ hợp đồng hành vi giữa School Attempt Engine và Family Attempt Engine qua helper thuần dùng chung (full-tx `.for('update')` + `runWithTransientLockRetry`, retry-after-abandon, `ATTEMPT_ALREADY_IN_PROGRESS`, superset 57 forbidden keys, JSON bounds, telemetry initialization, monotonic duration, HTTP `idempotentReplay` & abandon confirmation), giữ tách biệt hoàn toàn DB tables/authorization/Teacher-free Student independence.
+- **Schema & Migration Artifacts (`36` tables trong Drizzle code vs `22` tables trên live TiDB `test`):**
+  - `drizzle/0000_mimora_mvp_init.sql` (22 bảng): **ĐÃ MIGRATE & VERIFIED LIVE** trên TiDB `test` từ `P1-03B2B`..`P2-07`.
+  - `drizzle/0001_mimora_p4_01_guardian_family.sql` (+6 bảng, 22 `ALTER`, 9 indexes, 5 virtual cols, SHA-256 `72afb616e99de3ee8cb20f211140710cf3547895486febc635acda53edb2e809`): **ĐÃ KIỂM TRA TĨNH (`PASS`), CHƯA MIGRATE LÊN TiDB**.
+  - `drizzle/0002_mimora_p4_02_family_learning.sql` (+8 bảng, 22 FKs, 10 indexes, 5 virtual cols, SHA-256 `27c9f4669bf5f7850eb2cf5ca7f975585609334722e44ee4b5339ada2a16c765`): **ĐÃ KIỂM TRA TĨNH (`PASS`), CHƯA MIGRATE LÊN TiDB**.
+  - Lưu ý snapshot metadata (`KI-11`): `drizzle/meta/_journal.json` chứa cả `0000`..`0002` và `drizzle-kit check` pass offline, nhưng `drizzle/meta/` hiện chỉ có `0000_snapshot.json` (chưa có `0001`/`0002` snapshots) — cấm tuyệt đối chạy `drizzle-kit generate` hoặc `drizzle-kit push`.
+- **Unverified / Not Yet Run:**
+  - Live TiDB integration cho `0001` (`P4-01`), `0002` (`P4-02`), và `src/server/integration/*.integration.test.ts` trong môi trường hiện tại (vì không có `TIDB_*` credentials).
+  - Browser visual / authenticated E2E trên UI `P3`/`P4`.
 
 ---
 
 ## 8. Tiến độ Task
 
 ### Đã hoàn thành
-- `P0-00`: Workspace Inspection & Environment Audit (`PASS`)
-- `P0-01A`: Express + Vite Same-Origin Runtime Proof (`PASS`)
-- `P0-01B`: Browser Cookie & SameSite Verification (`PASS` — kiểm thử Preview thành công)
-- `P0-01C`: TiDB Connectivity & Drizzle/mysql2 Verification (`PASS` — `8.0.11-TiDB-v8.5.3-serverless`)
-- `P0-01D`: Password Hashing Feasibility (`PASS` — 9/9 unit tests; `scrypt`)
-- `P0-02A`: Authentication Architecture Feasibility (Option B Custom Auth)
-- `P1-01`: Project Foundation & Documentation (`PASS`)
-- `P1-01-FIX`: Documentation Consistency Correction (`PASS`)
-- `P1-02`: Database Schema Design & Data Integrity Specification (bản thiết kế đầu)
-- `P1-02R`: Database Schema Integrity Revision (hiệu chỉnh toàn vẹn lần 1)
-- `P1-02R-FIX1`: Teacher Observation Cross-Entity Integrity (hiệu chỉnh `teacher_observations` & chấp nhận làm đầu vào cho P1-03A)
-
-- `P1-03A` & `P1-03A-FIX1`: Drizzle Schema Implementation, Email Collation Alignment (`utf8mb4_0900_ai_ci`) & Migration Generation (`PASS` cục bộ)
-- `P1-03B1` -> `P1-03B1R-FIX2`: TiDB Read-Only Preflight & Target Schema Verification (`PASS` sau khi chuyển `TIDB_DATABASE` sang `test` trống với `utf8mb4`; xác nhận `tidb_enable_foreign_key=ON`, `tidb_enable_check_constraint=OFF`, `tidb_enable_clustered_index=ON`, hỗ trợ `utf8mb4_0900_ai_ci`)
-- `P1-03B2A` -> `P1-03B2A-REVERIFY`: Least-Privilege Account Separation Verification (`PASS` — runtime `3rtMqHg6yoxMH5d.mimora_runtime` và migrator `3rtMqHg6yoxMH5d.mimora_migrator` xác thực thành công qua TLS 1.2+, đúng quyền trên `test.*`, `/api/v1/db/health` HTTP `200`, `test` vẫn có `0` bảng / `0` views)
-- `P1-03B2A-CONFIG`: Drizzle Migrator Credential Separation (`PASS` — `drizzle.config.ts` chỉ đọc `TIDB_MIGRATOR_USER` / `TIDB_MIGRATOR_PASSWORD`, fail-fast khi thiếu, cập nhật `.env.example`, không thực thi migration)
-- `P1-03B2B-PREFLIGHT` & `P1-03B2B-EXPORT`: Migration Execution Readiness Review & External Migration Package (`PASS` — xác minh artifact SHA-256 `eec9f4669bf5f7850eb2cf5ca7f975585609334722e44ee4b5339ada2a16c765`, chuẩn bị gói ZIP sạch cho Path A)
-- `P1-03B2B`: External Migration Execution on TiDB `test` (`PASS` — `23` base tables = `22` app tables + `__drizzle_migrations`, `51` FKs, `5` virtual generated columns, SHA-256 `eec9f4669bf5f7850eb2cf5ca7f975585609334722e44ee4b5339ada2a16c765`)
-- `P1-03B2C`: Runtime Post-Migration Verification (`PASS` — `GET /api/v1/db/health` HTTP `200`, `TLSv1.3`, `3rtMqHg6yoxMH5d.mimora_runtime@%` chỉ có `SELECT, INSERT, UPDATE, DELETE ON test.*`, `SELECT COUNT(*) FROM users = 0`)
-- `P1-03B2D`: Post-Migration Cleanup & Documentation (`PARTIAL` — đã xóa `/mimora-p1-03b2b-external-migration.zip` khỏi workspace và cập nhật `project-docs/`; xóa `TIDB_MIGRATOR_*` khỏi AI Studio Secrets cần operator thực hiện thủ công)
-
-- `P1-03D`: Local `.git` Restored from GitHub Remote (`f0b0c3333e1faa5e57c8d5231a6f7247d336b676`, `PASS`)
-- `P2-00`: Backend Inventory & Implementation Blueprint (`READY WITH RISKS`)
-- `P2-01`: Core Backend Foundation (`env`, `withTransaction`, API error contract, Zod validation, `audit.service.ts`)
-- `P2-02`: Custom Authentication, Server-Side Sessions & Security (`auth.repository.ts`, `auth.service.ts`, `auth.routes.ts`, `middleware/auth.ts`, `csrf.ts`, `rate-limit.ts`, `scrypt-limiter.ts`, `session.ts`) — đã bổ sung kiểm thử live TiDB `P2-02` Auth Repository thành công trong `P2-03`
-- `P2-03`: Organizations, Users, Memberships, Classes & CSV Import + Live TiDB Integration Verification (`PASS` — kiểm thử live TiDB sạch với 0 tồn dư)
-- `P2-04`: Shared SEL Content Library, Versioning & Multi-Round Approval + Live TiDB Integration Verification (`PASS` — kiểm thử live TiDB `p204test-2b02bd96` sạch với 0 tồn dư)
-- `P2-05`: Class Assignments, Published Content Pinning & Home Practice + Live TiDB Integration Verification (`PASS` — `assignment.{repository,service}.ts`, `assignments.routes.ts`, unit/HTTP tests + live TiDB `p205test-18bc4a29` sạch với 0 tồn dư trên 14 bảng)
-- `P2-06`: Student Learning Attempts, Turn Persistence, Support Telemetry & Assignment Progress + Live TiDB Integration Verification (`PASS` — `attempt.{repository,service}.ts`, `attempts.routes.ts`, fake-repo + HTTP tests + live TiDB `p206test-97368327` xác minh `T-CONC-01..03`, `uq_attempts_single_in_progress`, `uq_turns_attempt_idx`, đồng bộ `assignment_progress`, ranh giới bài đóng & phân quyền, sạch với 0 tồn dư trên 17 bảng)
-
-- `P2-07`: Private Teacher Observations, Student Profiles & SEL Goals, Privacy-Preserving Admin Insights + Live TiDB & 22-Table Parity Verification (`PASS` — `{observation,goal,insight}.{repository,service}.ts`, `{observations,goals,admin-insights}.routes.ts`, unit/HTTP tests `p2-07.test.ts` + live TiDB `p207test-42cc2722` xác minh `fk_obs_attempt_assignment`, author-only 404/403, soft-delete, profile/goal safety, `k = 5` suppression, anti-differencing 422, 0 tồn dư + 22/22 `SHOW CREATE TABLE` parity)
+- `P0-00`..`P0-02A`, `P1-01`..`P1-03D`: Nền tảng runtime, custom auth, 22-table `0000` migration lên TiDB `test`, runtime/migrator separation (`PASS`).
+- `P2-01`..`P2-07`: Toàn bộ Phase 2 School Core backend + live TiDB DML & 22-table `SHOW CREATE TABLE` parity (`PASS`).
+- `P3-01`..`P3-04`: Toàn bộ Frontend SPA UI cho Admin, Teacher, Student, Guardian (unit/render checks `PASS`, chưa chạy browser E2E).
+- `P4-01`: Guardian account, email verification, school link invitation, & student linking (`unit/mock tests PASS`, migration `0001` chưa chạy trên TiDB).
+- `P4-02`: Family workspaces, family content, family assignments, & family attempts (`unit/mock tests PASS`, migration `0002` chưa chạy trên TiDB).
+- `P4-02.1`: Persistence Readiness, Runtime Database Safety & Migration Preflight (`PASS` ở mức code/tests/static DDL/runbook; **KHÔNG thực thi migration hay DML lên TiDB**):
+  - Xóa silent mock fallback khi thiếu `TIDB_*`; chuẩn hóa 3 mode (`tidb`, explicit `mock`, `unconfigured`) tại `src/server/db/tidb.ts` và `/api/v1/db/health` trong `server.ts`.
+  - Sửa và mở rộng `src/server/db/tidb.test.ts` (không hạ chuẩn assertion; thêm test missing/partial/invalid/mock/real-HTTP-no-fake-write).
+  - Tạo shared parity contract test `src/server/services/attempt-parity.test.ts` kiểm chứng `[school]` vs `[family]`.
+  - Preflight tĩnh chuỗi `0000` -> `0001` -> `0002` (36 bảng, 188 constraints, 49 standalone indexes, 0 destructive DDL, 0 Drizzle-vs-SQL parity mismatches, `drizzle-kit check` pass).
+  - Tạo `project-docs/TIDB_MIGRATION_RUNBOOK.md` (13 mục, dùng placeholders, chờ phê duyệt Technical Lead).
+- `KI-12`: Harmonize School and Family Attempt-Engine Behavior (`PASS` ở mức code/unit/mock-repo/mock-HTTP/regression; **KHÔNG sửa schema hay chạy migration/DML**):
+  - Trích xuất `src/server/services/attempt-shared.ts` với helper thuần dùng chung cho validation JSON/text, canonical comparison, start/retry eligibility, state transitions, duration/telemetry, và `runWithTransientLockRetry()`.
+  - Đưa toàn bộ 4 mutation của `family-learning.service.ts` vào `withTransaction` + `.for('update')` trong `family-learning.repository.ts`, xử lý `ER_DUP_ENTRY` và hoàn thiện parity HTTP header/response (`family-learning.routes.ts` & `attempts.routes.ts`).
+  - Mở rộng `src/server/services/attempt-parity.test.ts` (Unit + Mock Repo matrix + Lock/Duplicate Concurrency + Mock HTTP Dual-Context & Family-Only Student) và tạo `project-docs/ATTEMPT_ENGINE_PARITY.md`.
 
 ### Đang thực hiện
-- Hoàn tất Phase 2 Backend Core (`P2-01`..`P2-07`); chờ Technical Lead nghiệm thu `P2-07`.
+- Chờ Technical Lead nghiệm thu `P4-02.1` + `KI-12` và phê duyệt thực thi controlled migration (`0001` -> `0002`) trên môi trường có cấu hình TiDB credentials tách biệt (`TIDB_MIGRATOR_*`).
 
 ### Next Task
-- Phase 3 Frontend UI / Production Hardening theo chỉ đạo của Technical Lead.
+- Thực thi controlled migration (`0001` -> `0002`) theo `project-docs/TIDB_MIGRATION_RUNBOOK.md` + xác minh live TiDB & concurrency trước khi chuyển sang `P4-03`.
 
 ---
 
 ## 9. Blockers & Known Issues
 
-Chi tiết toàn bộ issues được theo dõi tại `project-docs/KNOWN_ISSUES.md` (`KI-01` đã đóng; `KI-02` đến `KI-10` đang mở). Các điểm cần chú ý nhất hiện tại:
-- `KI-02`: Nginx nội bộ ghi đè `X-Forwarded-Proto` thành `http` (`req.secure === false`, `req.protocol === 'http'`); hành vi HTTPS/proxy ở môi trường production thực tế chưa được xác minh.
-- `KI-03`: Nginx nội bộ chặn mã HTTP `403`, `502`, `503`, `504` bằng trang HTML tĩnh.
-- `KI-04`..`KI-05`: Chưa triển khai production static serving và authentication/authorization endpoints.
-- `KI-06`: Đã hoàn tất kiểm thử DML, composite FKs (`T-CONC-01..03`, `T-OBS-01..04`), virtual unique guards và 22/22 `SHOW CREATE TABLE` parity qua `P2-03`..`P2-07` (`p207test-42cc2722`), **vẫn mở** phần operator dọn thủ công `TIDB_MIGRATOR_*` khỏi AI Studio Secrets.
-- `KI-08`: `.git/` cục bộ đã không còn sau lần cold restart container (`2026-11-16`), chưa có remote Git.
-- `KI-09`: `tidb_enable_check_constraint` xác nhận `OFF` trên TiDB Serverless (giữ mở vĩnh viễn làm ranh giới kiến trúc buộc validate ở Zod/service layer); toàn bộ runtime unique guards, composite FKs và 22-table `SHOW CREATE TABLE` parity đã được xác minh `PASS` (`p207test-42cc2722`).
-- `KI-10`: Rủi ro TiKV sequential write hotspot với `UUIDv7` Clustered PK (`tidb_enable_clustered_index = ON` đã xác nhận).
-- **Account Custody & Cleanup:** Tài khoản operator `.root` và migrator `3rtMqHg6yoxMH5d.mimora_migrator` không được dùng bởi runtime code; cần operator gỡ `TIDB_MIGRATOR_USER` / `TIDB_MIGRATOR_PASSWORD` khỏi AI Studio Secrets và quản lý tách biệt ngoài runtime.
+Chi tiết toàn bộ issues được theo dõi tại `project-docs/KNOWN_ISSUES.md` (`KI-01` đã đóng; `KI-02` đến `KI-12` đang mở). Các điểm cần chú ý nhất hiện tại:
+- `KI-02` & `KI-03`: Nginx nội bộ ghi đè `X-Forwarded-Proto` thành `http` và chặn `403`/`502`/`503`/`504` bằng HTML tĩnh (`/api/v1/db/health` dùng HTTP `500` JSON để không bị chặn).
+- `KI-04`..`KI-05`: Cần hoàn thiện kiểm chứng production static serving & HTTPS/proxy thực tế.
+- `KI-06`, `KI-09`, `KI-10`: `TIDB_MIGRATOR_*` cleanup bởi operator, `tidb_enable_check_constraint = OFF` (validate ở Zod/service layer), và `UUIDv7` clustered index hotspot monitoring.
+- `KI-11` (`[P4-02.1]`): `0001` và `0002` **chưa chạy** trên TiDB (`P4-01`/`P4-02` chỉ pass trên unit/mock), và `drizzle/meta/` thiếu `0001_snapshot.json` / `0002_snapshot.json` (cấm chạy `drizzle-kit generate`/`push`).
+- `KI-12` (`[KI-12]`): Hành vi School vs Family Attempt Engine **đã được đồng bộ ở mức code, unit, mock repo & mock HTTP** (`attempt-shared.ts`, `ATTEMPT_ENGINE_PARITY.md`); chỉ giữ OPEN để xác minh khóa hàng `SELECT ... FOR UPDATE` & unique guard của `family_activity_attempts` trên TiDB thật sau khi chạy `0001`/`0002`.
+- **Environment Blocker hiện tại:** Container preview hiện tại không có `TIDB_*` / `TIDB_MIGRATOR_*` secrets, nên `live-tidb` tests và migration thực tế **NOT RUN**.

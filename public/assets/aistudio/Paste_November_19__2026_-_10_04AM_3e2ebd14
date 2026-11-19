@@ -1,0 +1,792 @@
+# MIMORA — P4-02: Family Curriculum, Teacher-Free Learning & Guardian Progress Overview
+
+## 1. Role
+
+Act as a Senior Full-Stack Architect, Backend Engineer, Product Engineer and Child-Privacy Specialist.
+
+Continue the existing MIMORA codebase after P4-01.
+
+Your responsibility is to make MIMORA usable by families without requiring a Teacher, School Organization or Class, while preserving the existing School and independent-Teacher learning models.
+
+Prioritize:
+- One canonical Student identity.
+- Genuine Teacher-free learning.
+- Reuse of existing content and learning-attempt systems.
+- Guardian access limited to descriptive progress summaries.
+- Strong tenant and relationship isolation.
+- Backward compatibility with P1–P4-01.
+- Safe and reversible schema design.
+
+Do not rebuild completed phases.
+
+## 2. Context & Goal
+
+### Current project status
+
+P1 — Platform Foundation: CLOSED.
+
+P2 — Backend Core: CLOSED.
+- Authentication and sessions.
+- Organizations and memberships.
+- Content library and immutable versioning.
+- Assignments and content-version pinning.
+- Learning attempts and turns.
+- Student profiles, goals and private observations.
+- Aggregate Admin Insights.
+
+P3 — Frontend & Integration: Implementation completed.
+- Admin Portal.
+- Teacher Portal.
+- Student Learning Experience.
+- Accessibility and responsive improvements.
+- P3-04 browser visual tests and authenticated live E2E remain NOT RUN.
+
+P4-01 — Guardian Account & Family Workspace:
+- New `guardian` role.
+- Separate Guardian registration/login.
+- Email verification state and verification-token hashing.
+- `family_workspaces`.
+- `family_memberships`.
+- `family_students`.
+- `guardian_student_links`.
+- One-time invitations for existing School Students.
+- Co-Guardian invitations.
+- Guardian-created Student accounts without Teacher or School.
+- Guardian portal foundation.
+- Student family-only login.
+- No live TiDB migration was executed.
+- No SMTP provider is configured.
+
+P4-01 automated tests: 94/94 PASS.
+TypeScript and production build: PASS.
+Browser screenshots and real Guardian registration: NOT RUN.
+
+### Approved product architecture
+
+MIMORA supports:
+1. Schools.
+2. Independent Teachers.
+3. Families purchasing directly for children.
+
+The following account model is immutable:
+
+**Guardian**
+- Separate account and login.
+- Purchases and manages family services.
+- Can manage multiple linked children.
+- Can be linked to existing School Students.
+- Can view general descriptive progress for linked children.
+
+**Student**
+- One canonical `users.id` per child.
+- Separate account and login.
+- Does not require a Teacher, School or Class.
+- Can learn at home independently.
+- Can also participate in School and independent-Teacher contexts.
+- Must never be duplicated when joining or leaving a context.
+
+A Student learning at home must not require:
+- `teacher` account.
+- School organization.
+- Class.
+- School class enrollment.
+- Teacher-created Assignment.
+
+### Guardian visibility decision: Option B
+
+Guardian can see:
+- General program and Chapter status.
+- Not started.
+- In progress.
+- Completed.
+- General start/completion information where appropriate.
+
+Guardian cannot see:
+- Answers.
+- Learning turns or transcripts.
+- Emotion choices.
+- Body Map responses.
+- Intensity responses.
+- Strategy selections.
+- AAC communications.
+- Private Teacher observations.
+- Psychological or standardized SEL scores.
+- Diagnostic interpretations.
+
+Do not convert assignment completion into a mastery or development claim.
+
+### P4-01 limitations
+
+The P4-01 report identifies that current P2-05/P2-06 operations rely on `organization_id` and `student_membership_id`, which prevent a Family-only Student from using the existing learning workflow without further backend work.
+
+It also reports that co-Guardian claim currently creates links to every active Student in a Family Workspace.
+
+Both issues must be handled within this package.
+
+### Goal
+
+Implement:
+1. Explicit per-child Guardian sharing scope.
+2. Family curriculum catalog and versioning.
+3. Family program activation/enrollment.
+4. Student learning without Teacher or School.
+5. Persistent family learning attempts and turns.
+6. One shared Student learning identity across family and school contexts.
+7. Guardian Progress API exposing only approved descriptive summaries.
+8. Family learning UI.
+9. Guardian progress overview UI.
+10. Admin tools for managing family learning programs.
+
+Payment providers and subscription billing are outside this package.
+
+## 3. Inspect First
+
+Inspect the current exact code before implementation.
+
+### A. P4-01 relationship model
+
+Inspect:
+- `src/server/db/schema/family.ts`.
+- `familyWorkspaces`.
+- `familyMemberships`.
+- `familyStudents`.
+- `guardianStudentLinks`.
+- `studentLinkInvitations`.
+- `coGuardianInvitations`.
+- Guardian registration and authentication.
+- Guardian route/service/repository files.
+- Co-Guardian claim flow.
+- Link revocation.
+- Relevant audit event types.
+- All authorization middleware.
+
+Verify exactly how an active Guardian obtains access to a Student and a Family Workspace.
+
+### B. Co-Guardian privacy scope correction
+
+P4-01 currently reports that accepting a Co-Guardian invitation automatically creates links to all active Students in the Family Workspace.
+
+This behavior is too broad.
+
+Inspect how invitation creation, hashing, claiming and link creation work.
+
+Implement explicit Student-level scope:
+
+- The inviting Guardian selects the exact Student accounts to share.
+- Only Students to which the inviting Guardian has an active authorized link may be included.
+- Persist the selected Student IDs or an equivalent immutable relationship scope in the invitation record.
+- Claiming an invitation creates Guardian–Student links only for the selected Students.
+- A newly added Student must never become automatically accessible to an existing Guardian.
+- No invitation may expose Students outside the inviting Guardian's authorized scope.
+- Revoking one Student link does not revoke unrelated links.
+- Reject invalid, revoked, expired or replayed invitations.
+- Preserve SHA-256 token hashing and single-use behavior.
+- Audit the exact relationship changes without logging raw invitation secrets.
+
+Do not assume one Guardian is automatically authorized for every child in a household.
+
+Do not invent legal custody or dispute policies. Document those as deferred governance requirements.
+
+### C. Assignment architecture
+
+Inspect actual P2-05 files:
+- Assignment schema.
+- Assignment items.
+- Assignment targets.
+- Assignment service/repository.
+- Assignment routes.
+- Teacher creator and mutation restrictions.
+- Published content pinning.
+- Progress queries.
+
+Identify every mandatory use of:
+- `organization_id`.
+- `teacher_membership_id`.
+- `student_membership_id`.
+- Class membership.
+- Teacher creator identity.
+
+Determine how the current model represents an assignment target and its immutable content versions.
+
+### D. Learning attempt architecture
+
+Inspect actual P2-06:
+- `activity_attempts`.
+- `activity_attempt_turns`.
+- Start/resume.
+- Retry.
+- Append turn.
+- Turn indexing/idempotency.
+- Completion.
+- Deliberate abandonment.
+- Assignment progress update.
+- Student authorization.
+- Session/organization context requirements.
+
+Determine whether an attempt can safely be associated with a canonical Student `user_id` without a mandatory School membership.
+
+Do not assume `activeOrganization = null` is already supported by every P2-06 endpoint.
+
+### E. Student authentication and contexts
+
+Inspect:
+- Family Student login using `FAM-XXXXXX` and `familyUsername`.
+- School Student login using organization code and `orgUsername`.
+- Canonical user identity resolution.
+- Session context.
+- `activeOrganization`.
+- Student API authorization.
+- Existing Student frontend state.
+- Organization and Family context switching behavior.
+
+A Student with both School and Family relationships must retain one authenticated identity and one learning history.
+
+Do not require a second Student account for Family access.
+
+### F. Existing content architecture
+
+Inspect:
+- `content_items`.
+- `content_versions`.
+- Existing five content types.
+- Publication and approval workflow.
+- Exact payload and metadata Zod validators.
+- Chapter/Session/Step metadata compatibility.
+- Immutable version pinning.
+
+Determine how a reusable Family learning program should reference published content versions.
+
+No program may use draft, pending-review or unpublished content.
+
+### G. Profiles and goals
+
+Inspect:
+- `student_profiles`.
+- `student_goals`.
+- Existing organization and membership requirements.
+- Current supported accessibility preferences.
+- Student self-access.
+- Teacher access.
+- Guardian access.
+
+Do not assume every existing profile field can be managed by Guardian.
+
+### H. Migration chain
+
+Inspect the complete `drizzle/` directory and `_journal.json`.
+
+P4-01 added `0001_mimora_p4_01_guardian_family.sql` but did not execute it.
+
+Verify:
+- Whether the migration number conflicts with earlier migrations.
+- Journal ordering.
+- Existing schema snapshots.
+- Foreign-key dependencies.
+- TiDB generated-column support.
+- Rollback implications.
+- Whether P4-01 and P4-02 migrations form a consistent ordered chain.
+
+Do not assume the file numbering is correct simply because a file exists.
+
+Do not execute migrations.
+
+### I. Initial architecture decision
+
+Before implementing new tables or changing P2 services, write a concise architecture decision explaining:
+- How Family programs are represented.
+- How one Student user participates in multiple learning contexts.
+- How Family targets differ from School targets.
+- How P2-06 attempts are associated with Family learning.
+- How pinned content versions remain immutable.
+- How Guardian summary data is generated safely.
+- How existing School Assignments remain backward compatible.
+
+Use the least invasive maintainable design.
+
+If safe backward compatibility cannot be demonstrated, stop before implementing an incompatible schema change.
+
+## 4. Authorized Scope
+
+### A. Correct co-Guardian sharing scope
+
+Implement the per-Student scope described above.
+
+Required outcomes:
+- No automatic blanket access to all Family Students.
+- Explicit selected Student list per invitation.
+- Only authorized linked Students can be selected.
+- Tests cover different Guardians having different child scopes.
+- Revocation remains isolated.
+- No changes to Student identity.
+
+### B. Family Learning Program model
+
+Implement a reusable Family learning-program concept.
+
+The program must represent:
+- Program title.
+- Description.
+- Locale.
+- Publication/version status.
+- Ordered Chapters or learning modules.
+- Ordered pinned content-version references.
+- Supported program availability.
+- Metadata needed for descriptive progress display.
+
+A Family program must not be a fake Teacher-created Assignment.
+
+Inspect whether the existing content and assignment model can support a reusable immutable Program template safely.
+
+Prefer reuse of existing published content versions.
+
+If a dedicated Family program model is necessary, create the smallest typed structure with clear versioning.
+
+Potential structural concepts include:
+- Family learning program.
+- Immutable program version.
+- Program items referencing exact published content versions.
+- Family program enrollment/activation.
+
+These are architectural concepts, not mandatory table names. Derive the final model from inspected code.
+
+Program publishing must preserve:
+- Approved source content.
+- Exact content-version references.
+- Immutable published program versions.
+- New versions for subsequent edits.
+
+Do not silently change an enrolled Student's pinned program version when Admin publishes a new version.
+
+Do not fabricate educational content.
+
+### C. Admin family curriculum management
+
+Extend Admin functionality to manage Family learning programs.
+
+Admin must be able to:
+- View Family programs.
+- Create a draft program.
+- Select approved published content versions.
+- Order Chapters and activities.
+- Preview a program.
+- Publish a new immutable program version.
+- See enrolled Family workspaces where appropriate.
+- Retire programs without destroying existing enrollment history.
+
+Use the existing content approval system where genuinely compatible.
+
+If a separate approval process is required, explain why.
+
+Do not add raw access to Guardian or Student private learning data to Admin.
+
+Admin must not see Student answers, turns or individual responses through Family program management.
+
+### D. Family program activation
+
+Allow an authorized Family Workspace to receive an available published program.
+
+For P4-02, no payment provider or subscription system exists.
+
+Therefore:
+- Implement an explicit non-payment program activation/provisioning path suitable for pilot or manually authorized access.
+- Only authorized Admin operations or a clearly approved free-program rule may grant access.
+- Do not present an unconfigured or unpurchased paid plan as purchased.
+- Do not create fabricated payment records.
+- Record which Family program version was activated.
+- Record when it was activated and by which authorized actor.
+- Prevent accidental duplicate active enrollment unless explicitly supported.
+
+P4-03 will connect commercial entitlements to real payment/subscription systems.
+
+### E. Family Student eligibility
+
+A Student linked to a Family Workspace may receive Family learning programs even when the Student:
+- Has no School Organization.
+- Has no Class.
+- Has no Teacher.
+- Has no School membership.
+
+Support both:
+- Family-only Student.
+- Student with both Family and School contexts.
+
+When the same Student exists in both contexts:
+- Reuse the same `users.id`.
+- Never create a duplicate user.
+- Keep family login identifiers separate from school org usernames where required.
+- Preserve existing sessions and learning history according to the verified auth design.
+
+### F. Family learning enrollment and Student access
+
+Implement a persistent enrollment relationship between:
+- Family Workspace.
+- Student user.
+- Published Family program version.
+
+The exact data model must be selected after inspecting P2-05/P2-06.
+
+Requirements:
+- Student receives access only to programs activated in their Family context.
+- Student can have multiple active programs when authorized.
+- Student can resume previously started programs.
+- Existing School Assignments remain separate and unchanged.
+- Family programs must not require a synthetic Teacher.
+- Family learning does not create fake School Organizations or fake Classes.
+
+### G. Extend learning attempt support
+
+Enable Family-only Students to complete the learning flow.
+
+Reuse P2-06 attempt and turn logic where possible.
+
+Requirements:
+- Start/resume a Family learning activity.
+- Restore existing turns.
+- Append new turns with existing idempotency safeguards.
+- Explicit retry.
+- Explicit completion.
+- Deliberate abandonment.
+- Accurate program/Chapter progress.
+- Preserve exact pinned content-version references.
+
+If current `activity_attempts` cannot support both School Assignment and Family Program contexts without ambiguous foreign keys or broken invariants, implement the smallest additive, typed solution.
+
+Do not duplicate the entire attempt/turn engine without strong justification.
+
+Do not change existing School attempt semantics.
+
+Student logout, navigation, refresh or session expiry must not automatically abandon a Family learning attempt.
+
+Never claim data was saved until the backend confirms persistence.
+
+### H. Student learning experience for Family context
+
+Extend the existing Student experience.
+
+A Family-only Student should see:
+- A welcoming Family learning home.
+- Available activated programs.
+- Their Chapters.
+- Not started/in progress/completed states.
+- Start/resume actions.
+- Their own learning history where supported.
+
+Do not display Teacher/class controls when no Teacher or School context exists.
+
+For Students with both Family and School contexts:
+- Keep one Student identity.
+- Present available assignments and Family programs coherently.
+- Distinguish their source context.
+- Avoid duplicate Student profiles.
+- Do not mix School-private and Family-private information.
+
+Reuse the P3-03 Chapter workspace and interaction components.
+
+Do not rebuild the six-step learning system.
+
+### I. Guardian Progress API
+
+Implement the approved Guardian-visible summary.
+
+Guardian may view only linked Students.
+
+For each linked Student, return an allow-listed descriptive summary such as:
+- Program or Chapter title.
+- Learning source: Family or School, where available.
+- State: not_started, in_progress, completed.
+- Start/completion timestamps where supported.
+- General activity status.
+
+The exact response fields must be deliberately minimized.
+
+Guardian must not receive:
+- Raw `activity_attempts` objects.
+- `activity_attempt_turns`.
+- Answers.
+- Selected emotions.
+- Body Map responses.
+- Intensity values.
+- Selected strategies.
+- AAC content.
+- Teacher observation notes.
+- Student profile sensory details.
+- Psychological, clinical or standardized SEL scoring.
+
+Do not fetch raw Student turns and remove fields in the frontend.
+
+Use dedicated repository queries and DTOs that return only approved summary fields.
+
+Authorization must be scoped to:
+1. Verified Guardian.
+2. Active Family Workspace membership.
+3. Active Guardian–Student link.
+4. Specific linked Student identity.
+
+A Guardian cannot use a Student ID from another family or another Guardian link.
+
+Support both Family and School learning summaries when the Guardian has a valid approved link to that Student and the backend can safely determine the status.
+
+Do not expose a School assignment to a Guardian merely because they guessed the ID.
+
+Progress wording must remain descriptive:
+- "Chưa bắt đầu".
+- "Đang học".
+- "Đã hoàn thành".
+
+Never say:
+- "Đã thành thạo".
+- "Đã cải thiện cảm xúc".
+- "Có vấn đề cảm xúc".
+- Any clinical or psychological inference.
+
+Do not build rankings or compare children.
+
+### J. Guardian Progress UI
+
+Extend Guardian portal with:
+- Family overview.
+- Linked child overview cards.
+- Program list.
+- Chapter status.
+- Descriptive learning states.
+- Honest empty state when no programs have been activated.
+- Clear source context when a program comes from School or Family.
+
+Do not show:
+- Answer previews.
+- Activity transcripts.
+- Emotion choices.
+- Turn details.
+- AAC communication.
+- Private teacher observations.
+
+The UI should feel reassuring and informative, not surveillance-oriented.
+
+### K. Guardian relationship scope
+
+Every Guardian progress request must use explicit relationship authorization.
+
+Do not rely solely on `family_memberships` when the actual access should be per Student.
+
+A Guardian who has a workspace membership but no active relationship to a particular Student must receive no data for that Student.
+
+Handle:
+- Revoked links.
+- Multiple Guardians.
+- Multiple Children.
+- Student archived or disabled states.
+- Family Workspace archived status.
+
+### L. Profiles and goals compatibility
+
+Inspect whether Family-only Students can access their own supported profile and goals.
+
+Where needed, extend access safely without requiring a School membership.
+
+Do not expose private Teacher observations to Guardian.
+
+Guardian should only be allowed to manage minimum necessary account/profile information already approved for the Family onboarding flow.
+
+Do not add diagnosis or clinical fields.
+
+Do not invent a GAS score.
+
+### M. Migration and data integrity
+
+Create required Drizzle and SQL migration artifacts only after finalizing the architecture.
+
+Migrations must:
+- Be additive where possible.
+- Preserve existing School data.
+- Preserve existing Student `users.id`.
+- Preserve P2 assignment/attempt history.
+- Preserve immutable published content versions.
+- Avoid deleting or rewriting existing records.
+- Preserve existing foreign-key behavior.
+- Have a documented rollback plan.
+- Respect actual TiDB capabilities.
+
+Do not execute migrations.
+
+### N. Tests
+
+Add:
+- Unit tests.
+- Repository tests.
+- Mock HTTP/API tests.
+- RBAC and cross-tenant tests.
+- Program version pinning tests.
+- Family Student login tests.
+- Student start/resume/turn/complete tests.
+- Guardian summary privacy tests.
+- Co-Guardian per-child scope tests.
+- School regression tests.
+
+Critical tests:
+1. Family-only Student can learn without Teacher, School or Class.
+2. Student with School and Family memberships retains one `users.id`.
+3. Family program uses exact published content versions.
+4. New program publication does not replace existing enrollment version.
+5. Student A cannot retrieve Student B's Family program.
+6. Guardian A cannot retrieve a Student without an active link.
+7. Guardian A cannot see a Student linked only to Guardian B.
+8. Co-Guardian invitation links only explicitly selected Students.
+9. A Student added after invitation acceptance is not automatically linked to the new Guardian.
+10. Guardian Progress API returns no answers, turns or private data.
+11. Existing School assignment and attempt tests remain passing.
+12. No migration or live DML occurs.
+
+## 5. Explicit Boundaries
+
+- Do NOT implement payment providers or subscriptions.
+- Do NOT create fabricated orders, invoices or paid entitlements.
+- Do NOT implement legal compliance claims.
+- Do NOT invent a final custody or family-dispute policy.
+- Do NOT make Guardian and Student share accounts.
+- Do NOT create duplicate Student identities.
+- Do NOT require Teachers for Family learning.
+- Do NOT create synthetic Teachers, Organizations or Classes.
+- Do NOT bypass P2-06 idempotency.
+- Do NOT replace exact pinned content versions.
+- Do NOT expose Student answers, turns or AAC messages to Guardians.
+- Do NOT expose emotion choices or Body Map/Intensity responses to Guardians.
+- Do NOT expose Teacher observations to Guardians.
+- Do NOT give every co-Guardian automatic access to every child.
+- Do NOT infer legal authority from sharing a Family Workspace alone.
+- Do NOT implement psychological analysis or SEL scoring.
+- Do NOT seed Family programs or fabricate educational content.
+- Do NOT automatically publish new programs.
+- Do NOT delete existing Student records.
+- Do NOT rewrite existing School assignments or attempt history.
+- Do NOT weaken CSRF, RBAC or tenant isolation.
+- Do NOT execute migrations.
+- Do NOT perform live DML or run seeds.
+- Do NOT cold-restart or delete the workspace.
+- Do NOT commit or push Git changes.
+
+If the existing P2 assignment/attempt architecture cannot support Family context safely, report the exact reason and the smallest required additive model. Do not force an unsafe shortcut.
+
+## 6. Acceptance Criteria
+
+P4-02 is PASS only when:
+
+### Co-Guardian security
+- Invitation specifies explicit selected Student IDs.
+- Invitation creator must have active access to each selected Student.
+- Claim creates links only for selected Students.
+- No blanket workspace-wide child linking occurs.
+- Existing Guardians and links remain intact.
+- Cross-Guardian access tests pass.
+
+### Family curriculum
+- Admin can create and publish a Family program.
+- Program versions are immutable after publication.
+- Program items reference exact published content versions.
+- Program ordering is stable.
+- Existing enrolled Students retain their pinned version after a newer version is published.
+
+### Teacher-free learning
+- Family-only Student can receive an activated program.
+- No Teacher is required.
+- No School Organization or Class is required.
+- Student can login independently.
+- Student can start and resume learning.
+- Turns persist.
+- Retry, completion and abandonment work correctly.
+- Existing P2-06 semantics are preserved.
+
+### Cross-context identity
+- A Student with School and Family contexts retains one canonical user identity.
+- School memberships remain unchanged.
+- Existing assignments remain usable.
+- Family learning does not create duplicate Student users.
+- Guardian linking does not create duplicate Student users.
+
+### Guardian progress
+- Guardian sees only explicitly linked Students.
+- Guardian sees only descriptive program/Chapter statuses.
+- Guardian cannot retrieve raw attempt or turn data.
+- Guardian cannot retrieve emotion, Body Map, intensity, strategy or AAC choices.
+- Guardian cannot retrieve Teacher observations.
+- Guardian cannot retrieve another Guardian's exclusively linked Student.
+- Guardian dashboard never describes completion as mastery or SEL improvement.
+
+### Privacy
+- No unauthorized workspace or Student access.
+- Revoked relationships stop access.
+- Invitation codes remain hashed and single-use.
+- No sensitive content in logs or error messages.
+- No private data leakage in API DTOs.
+
+### Regression and build
+- TypeScript passes.
+- Production build passes.
+- All P1–P4-01 automated tests remain passing.
+- New P4-02 tests pass.
+- Existing School and Teacher flows remain intact.
+- Health endpoints remain healthy.
+- No database migration is executed.
+- No live TiDB writes occur.
+
+Clearly report PASS, FAIL and NOT RUN.
+
+Mock tests must not be presented as live DB or browser verification.
+
+## 7. Evidence & Report
+
+Return:
+
+1. Overall verdict: PASS, PARTIAL or FAIL.
+2. Architecture decision and exact source files inspected.
+3. Co-Guardian per-child sharing correction.
+4. Family program model and versioning.
+5. New/modified database schema.
+6. Migration files created and migration ordering review.
+7. Family program administration workflow.
+8. Family Workspace activation/provisioning workflow.
+9. Family-only Student learning flow.
+10. Cross-context Student identity verification.
+11. P2-06 attempt/turn integration.
+12. Guardian Progress API DTO and explicit field allow-list.
+13. Guardian UI evidence.
+14. RBAC and privacy test matrix.
+15. Co-Guardian scope test evidence.
+16. Existing School workflow regression results.
+17. TypeScript and production build.
+18. Database health and explicit no-migration/no-DML confirmation.
+19. Browser and live authenticated E2E results.
+20. Operational limitations.
+21. Deferred legal/governance decisions.
+22. Exact remaining work for P4-03.
+
+Distinguish:
+- Unit test.
+- Mock API test.
+- Schema test.
+- Live read-only API.
+- Live database integration.
+- Browser visual test.
+- Live authenticated end-to-end test.
+- NOT RUN.
+
+Do not claim real Family enrollment persistence unless verified against a real test database.
+
+## 8. Stop Condition
+
+Implement P4-02 only.
+
+Correct the Co-Guardian per-Student scope before extending Family access.
+
+Implement Family curriculum, Teacher-free Student learning, and the minimal Guardian Progress summary.
+
+Do not implement payment or subscription providers.
+
+Do not execute migrations or perform live database writes.
+
+Do not expand Guardian access beyond the approved progress-only scope.
+
+Preserve existing School, Teacher and Student behavior.
+
+Stop after implementation, testing and reporting.
+
+Wait for Technical Lead review before beginning P4-03.

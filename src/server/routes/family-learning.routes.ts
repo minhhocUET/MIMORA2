@@ -658,6 +658,7 @@ export function createFamilyLearningRouters(deps?: FamilyLearningRoutersDeps) {
           req.params,
           'params'
         );
+        extractValidatedIdempotencyKeyHeader(req);
         const body = validateWithSchema(
           saveTurnBodySchema,
           req.body ?? {},
@@ -703,12 +704,13 @@ export function createFamilyLearningRouters(deps?: FamilyLearningRoutersDeps) {
           req.params,
           'params'
         );
+        extractValidatedIdempotencyKeyHeader(req);
         const body = validateWithSchema(
           completeAttemptBodySchema,
           req.body ?? {},
           'body'
         );
-        const attempt = await service.completeFamilyAttempt(
+        const result = await service.completeFamilyAttempt(
           {
             attemptId: params.attemptId,
             durationSeconds: body.durationSeconds,
@@ -723,7 +725,11 @@ export function createFamilyLearningRouters(deps?: FamilyLearningRoutersDeps) {
             ipPrefix: extractSafeIpPrefix(req.ip),
           }
         );
-        res.status(200).json({ status: 'ok', attempt });
+        res.status(200).json({
+          status: 'ok',
+          idempotentReplay: result.idempotentReplay,
+          attempt: result.attempt,
+        });
       })
     )
     .all((_req, res) => respondMethodNotAllowed(res, 'POST'));
@@ -739,12 +745,13 @@ export function createFamilyLearningRouters(deps?: FamilyLearningRoutersDeps) {
           req.params,
           'params'
         );
+        extractValidatedIdempotencyKeyHeader(req);
         const body = validateWithSchema(
           abandonAttemptBodySchema,
           req.body ?? {},
           'body'
         );
-        const attempt = await service.abandonFamilyAttempt(
+        const result = await service.abandonFamilyAttempt(
           {
             attemptId: params.attemptId,
             confirmed: body.confirmed,
@@ -755,7 +762,11 @@ export function createFamilyLearningRouters(deps?: FamilyLearningRoutersDeps) {
             ipPrefix: extractSafeIpPrefix(req.ip),
           }
         );
-        res.status(200).json({ status: 'ok', attempt });
+        res.status(200).json({
+          status: 'ok',
+          idempotentReplay: result.idempotentReplay,
+          attempt: result.attempt,
+        });
       })
     )
     .all((_req, res) => respondMethodNotAllowed(res, 'POST'));

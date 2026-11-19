@@ -1,15 +1,11 @@
 import { generateUuidV7 } from '../db/uuid.ts';
 import {
   ApiErrors,
-  type ApiErrorDetail,
   AppError,
-  extractDatabaseErrorMeta,
   isDatabaseError,
   translateDatabaseError,
 } from '../http/errors.ts';
 import {
-  ATTEMPT_STATUSES,
-  type ActivityAttemptRecord,
   type ActivityAttemptTurnRecord,
   type AssignmentProgressRecord,
   type AttemptRepository,
@@ -18,15 +14,34 @@ import {
   type StudentAttemptContext,
   type TeacherAttemptSummaryRow,
 } from '../repositories/attempt.repository.ts';
-import {
-  isCanonicalContentType,
-  scanUnsafeSelText,
-} from '../validators/content-payload.schema.ts';
+import { isCanonicalContentType } from '../validators/content-payload.schema.ts';
 import type { CanonicalContentType } from '../db/schema/_shared.ts';
 import {
   recordAuditEvent,
   type AuditInsertExecutor,
 } from './audit.service.ts';
+import {
+  areAttemptTurnPayloadsEquivalent,
+  assertAttemptCanAbandon,
+  assertAttemptCanComplete,
+  assertAttemptCanSaveTurn,
+  assertPinnedContentVersionMatches,
+  buildAttemptSupportContextView,
+  computeAttemptAvailableActions,
+  computeAttemptResumePosition,
+  computeMonotonicAttemptDuration,
+  isDuplicateKeyDbError,
+  normalizeAttemptEngineStatus,
+  resolveInitialSupportCounts,
+  resolveStartOrResumeEligibility,
+  resolveSupportTelemetryUpdate,
+  runWithTransientLockRetry,
+  type SafeSharedTurnView,
+  toSafeAttemptTurnView,
+  validateOptionalAttemptShortText,
+  validateRequiredAttemptStepKey,
+  validateSafeAttemptJsonObject,
+} from './attempt-shared.ts';
 
 export interface StudentAttemptActorContext {
   actorUserId: string;
@@ -151,268 +166,8 @@ export interface SafeTeacherAttemptDetailView extends SafeTeacherAttemptSummaryV
 const SUPPORT_CONTEXT_TEACHER_NOTE =
   'Thông tin AAC và đọc to chỉ là ngữ cảnh hỗ trợ tiếp cận tùy chọn của học sinh, không phải chỉ số đánh giá năng lực hay chẩn đoán.';
 
-const FORBIDDEN_ATTEMPT_PAYLOAD_KEYS = new Set([
-  'password',
-  'passwordhash',
-  'currentpassword',
-  'newpassword',
-  'pin',
-  'passcode',
-  'secret',
-  'pepper',
-  'token',
-  'rawtoken',
-  'sessiontoken',
-  'tokenhash',
-  'refreshtoken',
-  'csrftoken',
-  'cookie',
-  'cookies',
-  'setcookie',
-  'authorization',
-  'email',
-  'phone',
-  'phonenumber',
-  'mobile',
-  'homeaddress',
-  'ssn',
-  'timer',
-  'timerseconds',
-  'countdown',
-  'countdownseconds',
-  'timelimit',
-  'timelimitseconds',
-  'maxseconds',
-  'leaderboard',
-  'leaderboards',
-  'ranking',
-  'rankings',
-  'rank',
-  'score',
-  'scores',
-  'points',
-  'maxscore',
-  'passingscore',
-  'streak',
-  'streaks',
-  'streakpenalty',
-  'punishment',
-  'penalty',
-  'penalties',
-  'shame',
-  'shamingfeedback',
-  'wronganswerfeedback',
-  'iscorrect',
-  'correctanswer',
-  'correctoption',
-  'correctchoice',
-  'correctemotion',
-  'correctexpression',
-  'correctfacialexpression',
-  'mandatoryexpression',
-  'diagnosis',
-  'clinicaldiagnosis',
-  'disorder',
-  'personalitylabel',
-  'personalitytype',
-  'psychologicalprofile',
-  'profiling',
-  'assessmentscore',
-]);
-
-function normalizeKey(key: string): string {
-  return key.replace(/[^a-zA-Z0-9]/g, '').toLowerCase();
-}
-
-function validateSafeJsonObject(
-  value: Record<string, unknown> | null | undefined,
-  fieldPrefix: string
-): Record<string, unknown> | null | undefined {
-  if (value === undefined) {
-    return undefined;
-  }
-  if (value === null) {
-    return null;
-  }
-
-  const details: ApiErrorDetail[] = [];
-  let keyCounter = 0;
-  const maxKeys = 40;
-  const maxDepth = 5;
-
-  const visit = (node: unknown, path: string, depth: number): void => {
-    if (details.length >= 10) {
-      return;
-    }
-    if (depth > maxDepth) {
-      details.push({
-        field: path,
-        code: 'JSON_DEPTH_EXCEEDED',
-        messageKey: 'error.attempt.payload_too_deep',
-        message: 'Dữ liệu phản hồi lồng nhau quá sâu.',
-      });
-      return;
-    }
-
-    if (node === null || node === undefined) {
-      return;
-    }
-
-    if (typeof node === 'string') {
-      details.push(...scanUnsafeSelText(node, path));
-      return;
-    }
-
-    if (typeof node === 'number' || typeof node === 'boolean') {
-      return;
-    }
-
-    if (Array.isArray(node)) {
-      if (node.length > 25) {
-        details.push({
-          field: path,
-          code: 'JSON_ARRAY_TOO_LARGE',
-          messageKey: 'error.attempt.payload_array_too_large',
-          message: 'Danh sách phản hồi vượt quá kích thước cho phép.',
-        });
-        return;
-      }
-      for (let i = 0; i < node.length; i += 1) {
-        visit(node[i], `${path}[${i}]`, depth + 1);
-      }
-      return;
-    }
-
-    if (typeof node === 'object') {
-      const record = node as Record<string, unknown>;
-      for (const [key, nested] of Object.entries(record)) {
-        keyCounter += 1;
-        if (keyCounter > maxKeys) {
-          details.push({
-            field: path,
-            code: 'JSON_TOO_MANY_KEYS',
-            messageKey: 'error.attempt.payload_too_many_keys',
-            message: 'Dữ liệu phản hồi chứa quá nhiều trường.',
-          });
-          return;
-        }
-        const childPath = `${path}.${key}`;
-        if (FORBIDDEN_ATTEMPT_PAYLOAD_KEYS.has(normalizeKey(key))) {
-          details.push({
-            field: childPath,
-            code: 'FORBIDDEN_ATTEMPT_PAYLOAD_KEY',
-            messageKey: 'error.attempt.forbidden_payload_key',
-            message:
-              'Dữ liệu phản hồi chứa trường nhạy cảm hoặc không phù hợp với nguyên tắc SEL.',
-          });
-        }
-        visit(nested, childPath, depth + 1);
-      }
-    }
-  };
-
-  visit(value, fieldPrefix, 0);
-
-  if (details.length > 0) {
-    throw ApiErrors.validation(details);
-  }
-
-  return value;
-}
-
-function validateSafeShortText(
-  value: string | null | undefined,
-  field: string
-): string | null | undefined {
-  if (value === undefined) {
-    return undefined;
-  }
-  if (value === null) {
-    return null;
-  }
-  const trimmed = value.trim();
-  const details = scanUnsafeSelText(trimmed, field);
-  if (details.length > 0) {
-    throw ApiErrors.validation(details);
-  }
-  return trimmed;
-}
-
-function stableCanonicalize(value: unknown): unknown {
-  if (value === null || value === undefined) {
-    return null;
-  }
-  if (Array.isArray(value)) {
-    return value.map(stableCanonicalize);
-  }
-  if (typeof value === 'object') {
-    const entries = Object.entries(value as Record<string, unknown>)
-      .filter(([, v]) => v !== undefined)
-      .sort(([a], [b]) => a.localeCompare(b));
-    const normalized: Record<string, unknown> = {};
-    for (const [k, v] of entries) {
-      normalized[k] = stableCanonicalize(v);
-    }
-    return normalized;
-  }
-  return value;
-}
-
-function areTurnPayloadsIdentical(
-  existing: ActivityAttemptTurnRecord,
-  incoming: {
-    stepKey: string;
-    selectedChoiceKey: string | null;
-    selectedEmotionKey: string | null;
-    usedAac: boolean;
-    usedReadAloud: boolean;
-    responsePayloadJson: Record<string, unknown> | null;
-  }
-): boolean {
-  if (existing.stepKey !== incoming.stepKey) {
-    return false;
-  }
-  if ((existing.selectedChoiceKey ?? null) !== incoming.selectedChoiceKey) {
-    return false;
-  }
-  if ((existing.selectedEmotionKey ?? null) !== incoming.selectedEmotionKey) {
-    return false;
-  }
-  if (Boolean(existing.usedAac) !== incoming.usedAac) {
-    return false;
-  }
-  if (Boolean(existing.usedReadAloud) !== incoming.usedReadAloud) {
-    return false;
-  }
-
-  const existingJson = JSON.stringify(
-    stableCanonicalize(existing.responsePayloadJson ?? null)
-  );
-  const incomingJson = JSON.stringify(
-    stableCanonicalize(incoming.responsePayloadJson ?? null)
-  );
-  return existingJson === incomingJson;
-}
-
-function normalizeAttemptStatus(status: string): AttemptStatus {
-  if ((ATTEMPT_STATUSES as readonly string[]).includes(status)) {
-    return status as AttemptStatus;
-  }
-  return 'in_progress';
-}
-
 function toSafeTurnView(row: ActivityAttemptTurnRecord): SafeTurnView {
-  return {
-    id: row.id,
-    turnIndex: row.turnIndex,
-    stepKey: row.stepKey,
-    selectedChoiceKey: row.selectedChoiceKey ?? null,
-    selectedEmotionKey: row.selectedEmotionKey ?? null,
-    usedAac: Boolean(row.usedAac),
-    usedReadAloud: Boolean(row.usedReadAloud),
-    responsePayloadJson: row.responsePayloadJson ?? null,
-    respondedAt: row.respondedAt.toISOString(),
-  };
+  return toSafeAttemptTurnView(row);
 }
 
 function toSafeProgressSnapshotView(
@@ -458,18 +213,14 @@ function buildStudentAttemptView(params: {
   const safeAssignmentStatus: 'active' | 'closed' =
     context.assignment.status === 'closed' ? 'closed' : 'active';
   const isReadOnly = safeAssignmentStatus === 'closed';
-  const state = normalizeAttemptStatus(attempt.status);
-  const safeTurns = turns.map(toSafeTurnView);
-  const lastTurn =
-    safeTurns.length > 0 ? safeTurns[safeTurns.length - 1] : null;
+  const state = normalizeAttemptEngineStatus(attempt.status);
+  const safeTurns: SafeSharedTurnView[] = turns.map(toSafeTurnView);
 
   const contentType: CanonicalContentType = isCanonicalContentType(
     context.contentVersion.contentType
   )
     ? context.contentVersion.contentType
     : 'emotion_card';
-
-  const canActOnInProgress = !isReadOnly && state === 'in_progress';
 
   return {
     attemptId: attempt.id,
@@ -498,27 +249,10 @@ function buildStudentAttemptView(params: {
       ? attempt.completedAt.toISOString()
       : null,
     elapsedSeconds: attempt.durationSeconds,
-    supportContext: {
-      usedAacSupport: Boolean(attempt.usedAacSupport),
-      usedReadAloud: Boolean(attempt.usedReadAloud),
-      aacTapCount: attempt.aacTapCount,
-      readAloudCount: attempt.readAloudCount,
-      isOptionalContextOnly: true,
-    },
+    supportContext: buildAttemptSupportContextView(attempt),
     turns: safeTurns,
-    resumePosition: {
-      savedTurnCount: safeTurns.length,
-      nextTurnIndex: lastTurn ? lastTurn.turnIndex + 1 : 0,
-      lastTurnIndex: lastTurn ? lastTurn.turnIndex : null,
-      lastStepKey: lastTurn ? lastTurn.stepKey : null,
-    },
-    availableActions: {
-      canResume: canActOnInProgress,
-      canSubmitTurn: canActOnInProgress,
-      canComplete: canActOnInProgress,
-      canAbandon: canActOnInProgress,
-      canRetry: !isReadOnly && state !== 'in_progress',
-    },
+    resumePosition: computeAttemptResumePosition(safeTurns),
+    availableActions: computeAttemptAvailableActions({ isReadOnly, state }),
     progress: toSafeProgressSnapshotView(
       progress,
       context.totalItemsInAssignment
@@ -550,82 +284,17 @@ function toSafeTeacherAttemptSummaryView(
       title: row.contentTitle,
     },
     attemptNumber: a.attemptNumber,
-    state: normalizeAttemptStatus(a.status),
+    state: normalizeAttemptEngineStatus(a.status),
     startedAt: a.startedAt.toISOString(),
     lastInteractedAt: a.lastInteractedAt.toISOString(),
     completedAt: a.completedAt ? a.completedAt.toISOString() : null,
     elapsedSeconds: a.durationSeconds,
     turnCount: row.turnCount,
     supportContext: {
-      usedAacSupport: Boolean(a.usedAacSupport),
-      usedReadAloud: Boolean(a.usedReadAloud),
-      aacTapCount: a.aacTapCount,
-      readAloudCount: a.readAloudCount,
-      isOptionalContextOnly: true,
+      ...buildAttemptSupportContextView(a),
       contextNote: SUPPORT_CONTEXT_TEACHER_NOTE,
     },
   };
-}
-
-function isRetryableTransientDbConflict(err: unknown): boolean {
-  if (!isDatabaseError(err)) {
-    return false;
-  }
-  const meta = extractDatabaseErrorMeta(err);
-  if (!meta) {
-    return false;
-  }
-  return (
-    meta.code === 'ER_LOCK_WAIT_TIMEOUT' ||
-    meta.code === 'ER_LOCK_DEADLOCK' ||
-    meta.errno === 1205 ||
-    meta.errno === 1213 ||
-    meta.errno === 9007 ||
-    meta.errno === 8028
-  );
-}
-
-function isDuplicateKeyDbError(err: unknown): boolean {
-  if (!isDatabaseError(err)) {
-    return false;
-  }
-  const meta = extractDatabaseErrorMeta(err);
-  return meta?.code === 'ER_DUP_ENTRY' || meta?.errno === 1062;
-}
-
-async function runWithTransientLockRetry<T>(
-  operation: () => Promise<T>,
-  options?: { maxAttempts?: number; retryOnDuplicateOnce?: boolean }
-): Promise<T> {
-  const maxAttempts = options?.maxAttempts ?? 4;
-  let dupRetried = false;
-
-  for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
-    try {
-      return await operation();
-    } catch (err: unknown) {
-      if (err instanceof AppError) {
-        throw err;
-      }
-      if (
-        options?.retryOnDuplicateOnce &&
-        !dupRetried &&
-        isDuplicateKeyDbError(err)
-      ) {
-        dupRetried = true;
-        await new Promise((resolve) => setTimeout(resolve, 15));
-        continue;
-      }
-      if (attempt < maxAttempts && isRetryableTransientDbConflict(err)) {
-        const jitterMs = 15 + Math.floor(Math.random() * 35);
-        await new Promise((resolve) => setTimeout(resolve, jitterMs));
-        continue;
-      }
-      throw err;
-    }
-  }
-
-  throw ApiErrors.internal();
 }
 
 export interface AttemptServiceDeps {
@@ -697,17 +366,10 @@ export function createAttemptService(deps?: AttemptServiceDeps) {
                 );
               }
 
-              if (
-                input.expectedContentVersionId &&
-                input.expectedContentVersionId !==
-                  lockedCtx.item.contentVersionId
-              ) {
-                throw ApiErrors.conflict(
-                  'PINNED_CONTENT_VERSION_MISMATCH',
-                  'error.attempt.pinned_version_mismatch',
-                  'Phiên bản nội dung được yêu cầu không khớp với phiên bản đã gắn cố định trong bài tập.'
-                );
-              }
+              assertPinnedContentVersionMatches(
+                input.expectedContentVersionId,
+                lockedCtx.item.contentVersionId
+              );
 
               if (lockedCtx.assignment.status === 'closed') {
                 throw ApiErrors.conflict(
@@ -783,13 +445,11 @@ export function createAttemptService(deps?: AttemptServiceDeps) {
                 );
 
               if (existingInProgress) {
-                if (intent === 'retry') {
-                  throw ApiErrors.conflict(
-                    'ATTEMPT_ALREADY_IN_PROGRESS',
-                    'error.attempt.already_in_progress',
-                    'Đang có một lượt thực hành chưa hoàn thành cho hoạt động này. Vui lòng tiếp tục hoặc chủ động kết thúc trước khi bắt đầu lượt mới.'
-                  );
-                }
+                resolveStartOrResumeEligibility({
+                  hasInProgress: true,
+                  priorAttemptCount: 1,
+                  intent,
+                });
 
                 const [turns, progress] = await Promise.all([
                   repo.listTurnsForAttempt(
@@ -840,14 +500,16 @@ export function createAttemptService(deps?: AttemptServiceDeps) {
                 tx
               );
 
-              if (stats.totalCount > 0 && intent !== 'retry') {
-                throw ApiErrors.conflict(
-                  'RETRY_INTENT_REQUIRED',
-                  'error.attempt.retry_intent_required',
-                  'Hoạt động này đã có lượt thực hành trước đó. Vui lòng chọn Làm lại (retry) để bắt đầu lượt mới.'
-                );
-              }
+              const startAction = resolveStartOrResumeEligibility({
+                hasInProgress: false,
+                priorAttemptCount: stats.totalCount,
+                intent,
+              });
 
+              const initialSupport = resolveInitialSupportCounts({
+                usedAacSupport: input.usedAacSupport,
+                usedReadAloud: input.usedReadAloud,
+              });
               const nextAttemptNumber = stats.maxAttemptNumber + 1;
               const newAttempt = await repo.insertActivityAttempt(
                 {
@@ -865,10 +527,10 @@ export function createAttemptService(deps?: AttemptServiceDeps) {
                   lastInteractedAt: now,
                   completedAt: null,
                   durationSeconds: 0,
-                  usedAacSupport: Boolean(input.usedAacSupport),
-                  usedReadAloud: Boolean(input.usedReadAloud),
-                  aacTapCount: input.usedAacSupport ? 1 : 0,
-                  readAloudCount: input.usedReadAloud ? 1 : 0,
+                  usedAacSupport: initialSupport.usedAacSupport,
+                  usedReadAloud: initialSupport.usedReadAloud,
+                  aacTapCount: initialSupport.aacTapCount,
+                  readAloudCount: initialSupport.readAloudCount,
                   responseSummaryJson: null,
                 },
                 tx
@@ -888,7 +550,7 @@ export function createAttemptService(deps?: AttemptServiceDeps) {
 
               return {
                 httpStatus: 201 as const,
-                action: intent === 'retry' ? ('retried' as const) : ('started' as const),
+                action: startAction === 'retried' ? ('retried' as const) : ('started' as const),
                 attempt: buildStudentAttemptView({
                   context: {
                     attempt: newAttempt,
@@ -985,45 +647,26 @@ export function createAttemptService(deps?: AttemptServiceDeps) {
       savedTurn: SafeTurnView;
       attempt: SafeStudentAttemptView;
     }> {
-      const cleanStepKey = validateSafeShortText(
+      const cleanStepKey = validateRequiredAttemptStepKey(
         input.stepKey,
         'body.stepKey'
-      )!;
-      if (cleanStepKey.length === 0) {
-        throw ApiErrors.validation([
-          {
-            field: 'body.stepKey',
-            code: 'REQUIRED',
-            messageKey: 'error.validation.required',
-            message: 'Mã bước hoạt động (stepKey) không được để trống.',
-          },
-        ]);
-      }
-
-      const cleanChoiceKey =
-        validateSafeShortText(
-          input.selectedChoiceKey,
-          'body.selectedChoiceKey'
-        ) ?? null;
-      const cleanEmotionKey =
-        validateSafeShortText(
-          input.selectedEmotionKey,
-          'body.selectedEmotionKey'
-        ) ?? null;
+      );
+      const normalizedChoice = validateOptionalAttemptShortText(
+        input.selectedChoiceKey,
+        'body.selectedChoiceKey'
+      );
+      const normalizedEmotion = validateOptionalAttemptShortText(
+        input.selectedEmotionKey,
+        'body.selectedEmotionKey'
+      );
       const cleanPayload =
-        validateSafeJsonObject(
+        validateSafeAttemptJsonObject(
           input.responsePayloadJson,
           'body.responsePayloadJson'
         ) ?? null;
 
-      const normalizedChoice =
-        cleanChoiceKey && cleanChoiceKey.length > 0 ? cleanChoiceKey : null;
-      const normalizedEmotion =
-        cleanEmotionKey && cleanEmotionKey.length > 0 ? cleanEmotionKey : null;
       const usedAac = Boolean(input.usedAac);
       const usedReadAloud = Boolean(input.usedReadAloud);
-      const aacTapDelta = input.aacTapDelta ?? (usedAac ? 1 : 0);
-      const readAloudDelta = input.readAloudDelta ?? (usedReadAloud ? 1 : 0);
       const now = nowFn();
 
       try {
@@ -1068,13 +711,7 @@ export function createAttemptService(deps?: AttemptServiceDeps) {
               );
             }
 
-            if (locked.attempt.status !== 'in_progress') {
-              throw ApiErrors.conflict(
-                'ATTEMPT_NOT_IN_PROGRESS',
-                'error.attempt.not_in_progress',
-                'Lượt thực hành này đã kết thúc, không thể lưu thêm bước tương tác.'
-              );
-            }
+            assertAttemptCanSaveTurn(locked.attempt.status);
 
             const existingTurn = await repo.findTurnByAttemptAndIndex(
               {
@@ -1087,7 +724,7 @@ export function createAttemptService(deps?: AttemptServiceDeps) {
 
             if (existingTurn) {
               if (
-                areTurnPayloadsIdentical(existingTurn, {
+                areAttemptTurnPayloadsEquivalent(existingTurn, {
                   stepKey: cleanStepKey,
                   selectedChoiceKey: normalizedChoice,
                   selectedEmotionKey: normalizedEmotion,
@@ -1133,10 +770,20 @@ export function createAttemptService(deps?: AttemptServiceDeps) {
               );
             }
 
-            const nextDurationSeconds =
-              input.durationSeconds !== undefined
-                ? Math.max(locked.attempt.durationSeconds, input.durationSeconds)
-                : locked.attempt.durationSeconds;
+            const nextDurationSeconds = computeMonotonicAttemptDuration(
+              locked.attempt.durationSeconds,
+              input.durationSeconds
+            );
+            const nextTelemetry = resolveSupportTelemetryUpdate({
+              prevUsedAac: locked.attempt.usedAacSupport,
+              prevUsedReadAloud: locked.attempt.usedReadAloud,
+              prevAacTapCount: locked.attempt.aacTapCount,
+              prevReadAloudCount: locked.attempt.readAloudCount,
+              usedAacFlag: usedAac,
+              usedReadAloudFlag: usedReadAloud,
+              aacTapDelta: input.aacTapDelta,
+              readAloudDelta: input.readAloudDelta,
+            });
 
             const { turn: savedTurn, attempt: updatedAttempt } =
               await repo.insertTurnAndUpdateAttempt(
@@ -1160,17 +807,10 @@ export function createAttemptService(deps?: AttemptServiceDeps) {
                     attemptId: locked.attempt.id,
                     lastInteractedAt: now,
                     durationSeconds: nextDurationSeconds,
-                    usedAacSupport:
-                      Boolean(locked.attempt.usedAacSupport) ||
-                      usedAac ||
-                      aacTapDelta > 0,
-                    usedReadAloud:
-                      Boolean(locked.attempt.usedReadAloud) ||
-                      usedReadAloud ||
-                      readAloudDelta > 0,
-                    aacTapCount: locked.attempt.aacTapCount + aacTapDelta,
-                    readAloudCount:
-                      locked.attempt.readAloudCount + readAloudDelta,
+                    usedAacSupport: nextTelemetry.usedAacSupport,
+                    usedReadAloud: nextTelemetry.usedReadAloud,
+                    aacTapCount: nextTelemetry.aacTapCount,
+                    readAloudCount: nextTelemetry.readAloudCount,
                   },
                 },
                 tx
@@ -1249,7 +889,7 @@ export function createAttemptService(deps?: AttemptServiceDeps) {
       idempotentReplay: boolean;
       attempt: SafeStudentAttemptView;
     }> {
-      const cleanSummary = validateSafeJsonObject(
+      const cleanSummary = validateSafeAttemptJsonObject(
         input.responseSummaryJson,
         'body.responseSummaryJson'
       );
@@ -1297,15 +937,8 @@ export function createAttemptService(deps?: AttemptServiceDeps) {
               );
             }
 
-            if (locked.attempt.status === 'abandoned') {
-              throw ApiErrors.conflict(
-                'INVALID_ATTEMPT_STATE',
-                'error.attempt.invalid_state_transition',
-                'Lượt thực hành này đã được dừng trước đó. Vui lòng bắt đầu lượt mới nếu bạn muốn thực hiện lại.'
-              );
-            }
-
-            if (locked.attempt.status === 'completed') {
+            const completeCheck = assertAttemptCanComplete(locked.attempt.status);
+            if (completeCheck === 'replay') {
               const [turns, progress] = await Promise.all([
                 repo.listTurnsForAttempt(
                   {
@@ -1337,10 +970,16 @@ export function createAttemptService(deps?: AttemptServiceDeps) {
               };
             }
 
-            const aacTapDelta =
-              input.aacTapDelta ?? (input.usedAacSupport ? 1 : 0);
-            const readAloudDelta =
-              input.readAloudDelta ?? (input.usedReadAloud ? 1 : 0);
+            const nextTelemetry = resolveSupportTelemetryUpdate({
+              prevUsedAac: locked.attempt.usedAacSupport,
+              prevUsedReadAloud: locked.attempt.usedReadAloud,
+              prevAacTapCount: locked.attempt.aacTapCount,
+              prevReadAloudCount: locked.attempt.readAloudCount,
+              usedAacFlag: input.usedAacSupport,
+              usedReadAloudFlag: input.usedReadAloud,
+              aacTapDelta: input.aacTapDelta,
+              readAloudDelta: input.readAloudDelta,
+            });
             const updatedAttempt = await repo.updateAttemptStatus(
               {
                 organizationId: actor.organizationId,
@@ -1349,23 +988,14 @@ export function createAttemptService(deps?: AttemptServiceDeps) {
                 status: 'completed',
                 completedAt: now,
                 lastInteractedAt: now,
-                durationSeconds:
-                  input.durationSeconds !== undefined
-                    ? Math.max(
-                        locked.attempt.durationSeconds,
-                        input.durationSeconds
-                      )
-                    : locked.attempt.durationSeconds,
-                usedAacSupport:
-                  Boolean(locked.attempt.usedAacSupport) ||
-                  Boolean(input.usedAacSupport) ||
-                  aacTapDelta > 0,
-                usedReadAloud:
-                  Boolean(locked.attempt.usedReadAloud) ||
-                  Boolean(input.usedReadAloud) ||
-                  readAloudDelta > 0,
-                aacTapCount: locked.attempt.aacTapCount + aacTapDelta,
-                readAloudCount: locked.attempt.readAloudCount + readAloudDelta,
+                durationSeconds: computeMonotonicAttemptDuration(
+                  locked.attempt.durationSeconds,
+                  input.durationSeconds
+                ),
+                usedAacSupport: nextTelemetry.usedAacSupport,
+                usedReadAloud: nextTelemetry.usedReadAloud,
+                aacTapCount: nextTelemetry.aacTapCount,
+                readAloudCount: nextTelemetry.readAloudCount,
                 responseSummaryJson: cleanSummary,
               },
               tx
@@ -1482,15 +1112,8 @@ export function createAttemptService(deps?: AttemptServiceDeps) {
               );
             }
 
-            if (locked.attempt.status === 'completed') {
-              throw ApiErrors.conflict(
-                'INVALID_ATTEMPT_STATE',
-                'error.attempt.invalid_state_transition',
-                'Lượt thực hành đã hoàn thành trước đó và không thể chuyển sang trạng thái tạm dừng.'
-              );
-            }
-
-            if (locked.attempt.status === 'abandoned') {
+            const abandonCheck = assertAttemptCanAbandon(locked.attempt.status);
+            if (abandonCheck === 'replay') {
               const [turns, progress] = await Promise.all([
                 repo.listTurnsForAttempt(
                   {
@@ -1530,13 +1153,10 @@ export function createAttemptService(deps?: AttemptServiceDeps) {
                 status: 'abandoned',
                 completedAt: null,
                 lastInteractedAt: now,
-                durationSeconds:
-                  input.durationSeconds !== undefined
-                    ? Math.max(
-                        locked.attempt.durationSeconds,
-                        input.durationSeconds
-                      )
-                    : locked.attempt.durationSeconds,
+                durationSeconds: computeMonotonicAttemptDuration(
+                  locked.attempt.durationSeconds,
+                  input.durationSeconds
+                ),
                 usedAacSupport: Boolean(locked.attempt.usedAacSupport),
                 usedReadAloud: Boolean(locked.attempt.usedReadAloud),
                 aacTapCount: locked.attempt.aacTapCount,

@@ -105,3 +105,25 @@ Mọi vấn đề kỹ thuật, giới hạn môi trường và hạng mục ch�
 - **Ảnh hưởng:** Ở quy mô MVP trường học, tải ghi chấp nhận được; chỉ cần theo dõi nếu số lượt ghi đồng thời tăng rất cao trong các giai đoạn sau.
 - **Cách xác minh / Điều kiện đóng:** Giữ nguyên `CHAR(36)` UUIDv7 Clustered PK cho MVP (không chuyển `BINARY(16)` và không sharding sớm khi chưa có bằng chứng bottleneck); theo dõi TiKV write latency khi chạy kiểm thử tải trong các phase sau.
 
+---
+
+## KI-11 — `0001`/`0002` Migrations (`P4-01` & `P4-02`) Chưa Chạy Lên TiDB & Thiếu Snapshot JSON Sau `0000`
+- **Trạng thái:** OPEN *(Code & Static DDL Preflight Ready in `P4-02.1`; Live DB Execution Pending Technical Lead Authorization)*
+- **Mức độ:** HIGH
+- **Mô tả:** Schema hiện có 36 bảng (`drizzle/0000`, `0001`, `0002`), nhưng trong môi trường Preview hiện tại chưa có `TIDB_*` credentials và mới chỉ có `0000_mimora_mvp_init.sql` từng chạy ở môi trường `test` cũ (`P1-03B2B`). Ngoài ra `drizzle/meta/` chỉ chứa `0000_snapshot.json` (không có `0001_snapshot.json`/`0002_snapshot.json` vì `0001` và `0002` được viết khớp schema).
+- **Ảnh hưởng:** Mọi thao tác persistence thực tế ở runtime hiện fail-closed với `500 DB_CONFIG_MISSING` (`mode: 'unconfigured'`), và live TiDB integration tests cho P4-01/P4-02 chưa thể xác minh. Đồng thời tuyệt đối không chạy `drizzle-kit generate` hay `drizzle-kit push`.
+- **Cách xác minh / Điều kiện đóng:** Thực thi tuần tự `0000` -> `0001` -> `0002` theo `project-docs/TIDB_MIGRATION_RUNBOOK.md` với tài khoản migrator tách biệt, xác minh 36/36 `SHOW CREATE TABLE` parity, xác minh `/api/v1/db/health` (`mode: 'tidb'`, `durablePersistence: true`), và chạy kiểm thử smoke/integration sạch trên TiDB.
+
+---
+
+## KI-12 — Harmonize School (`P2-06`) & Family (`P4-02`) Attempt-Engine Behavior
+- **Trạng thái:** OPEN *(Harmonized at Code, Unit, Mock Repo & Mock HTTP Levels in `KI-12`; Live TiDB Row-Lock & Unique-Guard Verification Pending `0001`/`0002` Migration + `TIDB_*` Secrets)*
+- **Mức độ:** LOW *(đã giảm từ delta hành vi sang chờ kiểm thử tích hợp TiDB thật)*
+- **Mô tả:** Nhiệm vụ `KI-12` đã đồng bộ hóa toàn bộ 6 điểm chênh lệch giữa School (`src/server/services/attempt.service.ts`) và Family (`src/server/services/family-learning.service.ts`) thông qua bộ helper thuần dùng chung `src/server/services/attempt-shared.ts` (không gộp bảng DB hay mô hình phân quyền), kèm tài liệu chuẩn `project-docs/ATTEMPT_ENGINE_PARITY.md`:
+  1. **Full Transaction + `.for('update')` + Transient Lock Retry:** Đã đưa toàn bộ `startOrResumeFamilyAttempt`, `saveFamilyTurn`, `completeFamilyAttempt`, `abandonFamilyAttempt` vào trong `withTransaction` + `.for('update')` + `runWithTransientLockRetry()` (chống stale snapshot dưới `REPEATABLE READ`, retry lock timeout/write conflict và chuyển `ER_DUP_ENTRY` thành `409 ATTEMPT_CONCURRENT_CONFLICT` / `409 TURN_INDEX_CONFLICT`).
+  2. **Retry After Abandon & `in_progress` Retry Conflict:** Cả hai engine hiện dùng `resolveStartOrResumeEligibility()`: yêu cầu `intent='retry'` sau mọi lượt trước đó (kể cả `abandoned`, trả `409 RETRY_INTENT_REQUIRED`) và chặn `intent='retry'` khi đang có `in_progress` (`409 ATTEMPT_ALREADY_IN_PROGRESS`).
+  3. **Attempt Numbering & Turn Ordering:** Family dùng `MAX(attempt_number) + 1` và sắp xếp turn theo `(turnIndex, respondedAt, id)` đồng bộ với School.
+  4. **Support Telemetry, Payload Superset & Cross-Terminal Guards:** Cả hai khởi tạo `aacTapCount: 1` / `readAloudCount: 1` khi cờ ban đầu `true`, dùng chung 57 forbidden payload keys (gồm `mastery`), `maxDepth = 5` / `maxKeys = 40`, và chặn `complete` trên `abandoned` / `abandon` trên `completed` (`409 INVALID_ATTEMPT_STATE`).
+  5. **HTTP & Replay Envelope Parity:** `family-learning.routes.ts` nhận `Idempotency-Key` header trên `/turns`, `/complete`, `/abandon` và trả `{ status: 'ok', idempotentReplay, attempt }` trên `/complete` và `/abandon`; `attempts.routes.ts` ép HTTP `/abandon` bắt buộc `confirmed === true` (trong khi giữ chữ ký `confirmed?: boolean` nội bộ cho test `P2-06`).
+- **Hạng mục còn mở để đóng hoàn toàn `KI-12`:** Chưa có `TIDB_*` secrets nên chưa thể chạy kiểm thử `SELECT ... FOR UPDATE` + `uq_family_attempts_single_in_progress` / `uq_family_turns_attempt_idx` trên TiDB Cloud thật sau khi chạy `0001` -> `0002` (`KI-11`).
+- **Cách xác minh / Điều kiện đóng:** Sau khi thực thi migration `0001` -> `0002` theo `project-docs/TIDB_MIGRATION_RUNBOOK.md`, chạy bộ kiểm thử tích hợp live TiDB cho `family_activity_attempts` tương tự `T-CONC-01..03` và xác nhận `attempt-parity.test.ts` PASS toàn bộ.

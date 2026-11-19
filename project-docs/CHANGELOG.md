@@ -4,6 +4,34 @@ Mọi thay đổi kỹ thuật và quyết định kiến trúc có bằng chứ
 
 ---
 
+## [KI-12] — 2026-11-19
+**Mục tiêu:** Đồng bộ hóa hành vi giữa School Attempt Engine (`attempt.service.ts`) và Family Attempt Engine (`family-learning.service.ts`) thông qua bộ helper thuần dùng chung, giữ nguyên tách biệt bảng TiDB, mô hình phân quyền và khả năng học độc lập Teacher-free của Family-only Student (KHÔNG sửa DB schema/migrations, KHÔNG thực thi DDL/DML, dừng trước `P4-03`).
+
+- **Nội dung thay đổi & kiểm tra:**
+  - `src/server/services/attempt-shared.ts` (tạo mới): Trích xuất các pure helpers dùng chung gồm `FORBIDDEN_ATTEMPT_PAYLOAD_KEYS` (57-key superset gồm `mastery` + credential/PII/coercive/clinical keys), `validateSafeAttemptJsonObject` (`maxKeys=40`, `maxDepth=5`, `maxArray=25`, `scanUnsafeSelText`), `validateRequiredAttemptStepKey`, `validateOptionalAttemptShortText`, `canonicalizeAttemptPayload`, `areAttemptTurnPayloadsEquivalent`, `assertPinnedContentVersionMatches`, `resolveStartOrResumeEligibility`, `assertAttemptCanSaveTurn`, `assertAttemptCanComplete`, `assertAttemptCanAbandon`, `computeMonotonicAttemptDuration`, `resolveInitialSupportCounts`, `resolveSupportTelemetryUpdate`, `toSafeAttemptTurnView`, `computeAttemptResumePosition`, `computeAttemptAvailableActions`, `buildAttemptSupportContextView`, và `runWithTransientLockRetry`.
+  - `src/server/repositories/family-learning.repository.ts`: Bổ sung `.for('update')` row locking khi truyền `tx` trên các truy vấn đọc trong transaction (`findActiveStudentEnrollmentById`, `findFamilyAttemptByIdForStudent`, `findInProgressFamilyAttempt`, `findFamilyAttemptByIdempotencyKey`, `countFamilyAttemptsForItem`, `listTurnsForFamilyAttempt`, `findTurnForFamilyAttempt`, `recomputeAndUpdateEnrollmentProgress`), trả thêm `maxAttemptNumber` để tính `MAX(attempt_number)+1`, chuẩn hóa thứ tự turn `(turnIndex, respondedAt, id)`, và giữ nguyên `completedAt` đầu tiên khi retry sau khi enrollment đã hoàn thành.
+  - `src/server/services/attempt.service.ts` & `src/server/services/family-learning.service.ts`: Ủy quyền validation, version pinning, start/retry eligibility (bắt buộc `intent='retry'` sau mọi lượt trước gồm `abandoned`, chặn `intent='retry'` khi đang `in_progress` với `409 ATTEMPT_ALREADY_IN_PROGRESS`), state transitions (`409 INVALID_ATTEMPT_STATE`), duration, support telemetry initialization (`1` khi cờ ban đầu `true`), và `runWithTransientLockRetry` cho `./attempt-shared.ts`. Đưa toàn bộ 4 mutation của `family-learning.service.ts` vào trong `repo.withTransaction` + dịch `ER_DUP_ENTRY` sang `409 ATTEMPT_CONCURRENT_CONFLICT` / `409 TURN_INDEX_CONFLICT`. Đồng bộ return shape `{ idempotentReplay, attempt }` trên `completeFamilyAttempt` / `abandonFamilyAttempt`.
+  - `src/server/routes/family-learning.routes.ts` & `src/server/routes/attempts.routes.ts`: Mở rộng validation header `Idempotency-Key` trên `/turns`, `/complete`, `/abandon` cho Family; trả `{ status: 'ok', idempotentReplay, attempt }` trên `/complete` & `/abandon` Family khớp `src/api/student.ts`; ép HTTP School `/abandon` kiểm tra `confirmed === true` (giữ tương thích `confirmed?: boolean` ở direct service cho bộ test `P2-06`).
+  - `src/server/services/attempt-parity.test.ts` & `project-docs/ATTEMPT_ENGINE_PARITY.md`: Mở rộng test unit, mock repo matrix cho cả `[school]` & `[family]`, mô phỏng concurrency `ER_LOCK_WAIT_TIMEOUT` / `ER_DUP_ENTRY`, và HTTP test cho Family-only Student (`activeOrganizationId: null`), Dual-context Student, và session expiry recovery; ghi rõ Checklist Guardrail cho developer và giữ nguyên trạng thái `NOT RUN` cho live TiDB integration.
+  - Cập nhật `project-docs/{KNOWN_ISSUES,PROJECT_STATE,CHANGELOG}.md`.
+
+---
+
+## [P4-02.1] — 2026-11-19
+**Mục tiêu:** Sẵn sàng Persistence, An toàn Database Runtime (`tidb` | `mock` tường minh | `unconfigured`), Khắc phục Kiểm thử TiDB bị Fail, Tiền kiểm Chuỗi Migration (`0000` -> `0001` -> `0002`), Đối chiếu Parity Attempt Engine & Lập Runbook Thực thi Có Kiểm soát (KHÔNG thực thi migration/DML trực tiếp).
+
+- **Nội dung thay đổi & kiểm tra:**
+  - `src/server/db/tidb.ts` & `server.ts` & `.env.example`: Loại bỏ hoàn toàn cơ chế fallback ngầm sang `createMockDrizzleDb()` khi thiếu `TIDB_*`. Thiết lập chính sách 3 chế độ tường minh qua `MIMORA_DB_MODE`:
+    1. `tidb` (mặc định khi đủ 5 biến `TIDB_*` hợp lệ): kết nối `mysql2` pool + TLS >= 1.2 + Drizzle 36 bảng; `/api/v1/db/health` chỉ báo `connected` (`durablePersistence: true`, `mode: 'tidb'`) sau `SELECT 1`.
+    2. `mock` (chỉ bật tường minh khi `MIMORA_DB_MODE=mock` và **bị cấm khi `NODE_ENV=production`**): trả instance mock gắn nhãn, `/api/v1/db/health` luôn trả `500 DB_MOCK_MODE_ACTIVE` (`database: 'mock_ephemeral'`, `durablePersistence: false`, không bao giờ báo đã kết nối TiDB).
+    3. `unconfigured` (khi thiếu toàn bộ hoặc một phần `TIDB_*`, port sai hoặc mode sai): `getDb()` và `withTransaction()` ném `AppError(500, 'DB_CONFIG_MISSING' | 'DB_CONFIG_INVALID')` đã làm sạch, ngăn chặn mọi ghi giả thành công ở các route persistence; server Preview vẫn khởi động và phục vụ `/api/v1/health` (`200`) + SPA bình thường.
+  - `src/server/db/tidb.test.ts`: Cập nhật kiểm tra cả 36 bảng schema, missing config, partial config, invalid `TIDB_PORT`/`MIMORA_DB_MODE`, chặn ghi giả trên route HTTP thật (`POST /api/v1/auth/guardian/register` -> `500 DB_CONFIG_MISSING`), chế độ `mock` tường minh & chặn ở `production`, mock health không bao giờ báo connected, và giữ live `SELECT 1` ở trạng thái `SKIP` trung thực khi chưa có `TIDB_*`.
+  - Tiền kiểm Migration & DDL tĩnh: Xác minh chuỗi `0000` (`22` bảng, SHA-256 `eec9f466...`) -> `0001` (`+6` bảng, SHA-256 `72afb616...`) -> `0002` (`+8` bảng, SHA-256 `27c9a694...`), tổng **36 bảng / 94 FKs (34 composite) / 49 indexes / 15 virtual columns / 0 lỗi mismatch với Drizzle schema / `drizzle-kit check` PASS**. Phát hiện `drizzle/meta/` chưa có `0001_snapshot.json` & `0002_snapshot.json` (đã ghi chú cấm `drizzle-kit generate`/`push`).
+  - `src/server/services/attempt-parity.test.ts`: Bổ sung bộ contract test dùng chung xác minh hành vi cốt lõi song song giữa School (`attempt.service.ts`) và Family (`family-learning.service.ts`).
+  - `project-docs/TIDB_MIGRATION_RUNBOOK.md` & cập nhật `project-docs/{PROJECT_STATE,KNOWN_ISSUES,CHANGELOG}.md`.
+
+---
+
 ## [P2-07] — 2026-11-18
 **Mục tiêu:** Triển khai Hệ thống Quan sát Riêng tư của Giáo viên (`teacher_observations`), Hồ sơ & Mục tiêu SEL của Học sinh (`student_profiles`, `student_goals`), Bảng phân tích Tổng hợp Bảo vệ Quyền riêng tư cho Platform Admin (`org_insight_daily_snapshots`, ngưỡng `k = 5`), Kiểm thử Tích hợp Live TiDB, và Đối chiếu `SHOW CREATE TABLE` Parity cho 22 Bảng.
 

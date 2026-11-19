@@ -172,7 +172,9 @@ async function startServer() {
 
       res.status(result.error.httpStatus).json({
         status: 'error',
-        database: 'disconnected',
+        database: result.database,
+        mode: result.mode,
+        durablePersistence: result.durablePersistence,
         orm: 'drizzle',
         driver: 'mysql2',
         code: result.error.code,

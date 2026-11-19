@@ -1,6 +1,7 @@
 import { sql } from 'drizzle-orm';
 import { drizzle, type MySql2Database } from 'drizzle-orm/mysql2';
 import mysql from 'mysql2/promise';
+import { AppError } from '../http/errors.ts';
 import * as schema from './schema/index.ts';
 
 export type MimoraSchema = typeof schema;
@@ -16,9 +17,13 @@ export interface TiDbEnvConfig {
   database: string;
 }
 
+export type DatabaseMode = 'tidb' | 'mock' | 'unconfigured';
+export type ConfiguredDatabaseModeInput = 'auto' | 'tidb' | 'mock';
+
 export type DbErrorCode =
   | 'DB_CONFIG_MISSING'
   | 'DB_CONFIG_INVALID'
+  | 'DB_MOCK_MODE_ACTIVE'
   | 'DB_AUTH_FAILED'
   | 'DB_NOT_FOUND'
   | 'DB_DNS_ERROR'
@@ -35,12 +40,24 @@ export interface SanitizedDbError {
 export interface DbHealthResult {
   status: 'ok';
   database: 'connected';
+  mode: 'tidb';
+  durablePersistence: true;
   orm: 'drizzle';
   driver: 'mysql2';
   tls: 'required-min-v1.2-verified';
   latencyMs: number;
   serverVersion: string | null;
 }
+
+export type DbHealthCheckResponse =
+  | { ok: true; data: DbHealthResult }
+  | {
+      ok: false;
+      mode: DatabaseMode;
+      database: 'disconnected' | 'mock_ephemeral';
+      durablePersistence: false;
+      error: SanitizedDbError;
+    };
 
 const REQUIRED_ENV_KEYS = [
   'TIDB_HOST',
@@ -50,16 +67,34 @@ const REQUIRED_ENV_KEYS = [
   'TIDB_DATABASE',
 ] as const;
 
+const MOCK_DB_BRAND = Symbol.for('mimora.db.mock_ephemeral');
+
 let poolInstance: mysql.Pool | null = null;
 let dbInstance: MimoraDatabase | null = null;
 
-export function validateTiDbEnv():
+function createSanitizedDbAppError(error: SanitizedDbError): AppError {
+  const messageKey =
+    error.code === 'DB_CONFIG_INVALID'
+      ? 'error.db.config_invalid'
+      : 'error.db.config_missing';
+  return new AppError({
+    httpStatus: error.httpStatus,
+    code: error.code,
+    messageKey,
+    message: error.message,
+    expose: false,
+  });
+}
+
+export function validateTiDbEnv(
+  envSource: NodeJS.ProcessEnv = process.env
+):
   | { ok: true; config: TiDbEnvConfig }
   | { ok: false; error: SanitizedDbError; missingKeys: string[] } {
   const missingKeys: string[] = [];
 
   for (const key of REQUIRED_ENV_KEYS) {
-    const val = process.env[key];
+    const val = envSource[key];
     if (!val || val.trim().length === 0) {
       missingKeys.push(key);
     }
@@ -77,7 +112,7 @@ export function validateTiDbEnv():
     };
   }
 
-  const parsedPort = Number(process.env.TIDB_PORT!.trim());
+  const parsedPort = Number(envSource.TIDB_PORT!.trim());
   if (!Number.isInteger(parsedPort) || parsedPort < 1 || parsedPort > 65535) {
     return {
       ok: false,
@@ -85,7 +120,8 @@ export function validateTiDbEnv():
       error: {
         httpStatus: 500,
         code: 'DB_CONFIG_INVALID',
-        message: 'Database port configuration (TIDB_PORT) must be a valid integer between 1 and 65535.',
+        message:
+          'Database port configuration (TIDB_PORT) must be a valid integer between 1 and 65535.',
       },
     };
   }
@@ -93,13 +129,91 @@ export function validateTiDbEnv():
   return {
     ok: true,
     config: {
-      host: process.env.TIDB_HOST!.trim(),
+      host: envSource.TIDB_HOST!.trim(),
       port: parsedPort,
-      user: process.env.TIDB_USER!.trim(),
-      password: process.env.TIDB_PASSWORD!,
-      database: process.env.TIDB_DATABASE!.trim(),
+      user: envSource.TIDB_USER!.trim(),
+      password: envSource.TIDB_PASSWORD!,
+      database: envSource.TIDB_DATABASE!.trim(),
     },
   };
+}
+
+export type ResolvedDatabasePolicy =
+  | { mode: 'tidb'; ok: true; config: TiDbEnvConfig }
+  | { mode: 'mock'; ok: true }
+  | { mode: 'unconfigured'; ok: false; error: SanitizedDbError; missingKeys: string[] };
+
+export function resolveDatabasePolicy(
+  envSource: NodeJS.ProcessEnv = process.env
+): ResolvedDatabasePolicy {
+  const rawMode = envSource.MIMORA_DB_MODE?.trim().toLowerCase() ?? '';
+  const nodeEnv = envSource.NODE_ENV?.trim().toLowerCase() || 'development';
+
+  if (
+    rawMode.length > 0 &&
+    rawMode !== 'auto' &&
+    rawMode !== 'tidb' &&
+    rawMode !== 'mock'
+  ) {
+    return {
+      mode: 'unconfigured',
+      ok: false,
+      missingKeys: [],
+      error: {
+        httpStatus: 500,
+        code: 'DB_CONFIG_INVALID',
+        message:
+          'Database mode configuration (MIMORA_DB_MODE) must be one of: auto, tidb, mock.',
+      },
+    };
+  }
+
+  if (rawMode === 'mock') {
+    if (nodeEnv === 'production') {
+      return {
+        mode: 'unconfigured',
+        ok: false,
+        missingKeys: [],
+        error: {
+          httpStatus: 500,
+          code: 'DB_CONFIG_INVALID',
+          message:
+            'Explicit mock database mode (MIMORA_DB_MODE=mock) is forbidden in production.',
+        },
+      };
+    }
+    return { mode: 'mock', ok: true };
+  }
+
+  const envCheck = validateTiDbEnv(envSource);
+  if (!envCheck.ok) {
+    return {
+      mode: 'unconfigured',
+      ok: false,
+      missingKeys: envCheck.missingKeys,
+      error: envCheck.error,
+    };
+  }
+
+  return {
+    mode: 'tidb',
+    ok: true,
+    config: envCheck.config,
+  };
+}
+
+export function getDatabaseMode(
+  envSource: NodeJS.ProcessEnv = process.env
+): DatabaseMode {
+  return resolveDatabasePolicy(envSource).mode;
+}
+
+export function isMockDatabase(db: unknown): boolean {
+  return Boolean(
+    db &&
+      typeof db === 'object' &&
+      (db as Record<symbol, unknown>)[MOCK_DB_BRAND] === true
+  );
 }
 
 let mockDbInstance: MimoraDatabase | null = null;
@@ -142,7 +256,8 @@ function createMockDrizzleDb(): MimoraDatabase {
     findFirst: async () => null,
   };
 
-  const mockCore: Record<string, unknown> = {
+  const mockCore: Record<string | symbol, unknown> = {
+    [MOCK_DB_BRAND]: true,
     select: () => createChainableQuery([]),
     selectDistinct: () => createChainableQuery([]),
     insert: () => createChainableQuery([{ affectedRows: 0, insertId: 0 }]),
@@ -153,6 +268,7 @@ function createMockDrizzleDb(): MimoraDatabase {
       {},
       {
         get: () => noOpRelational,
+        has: () => true,
       }
     ),
     transaction: async <T>(fn: (tx: MimoraTransaction) => Promise<T>): Promise<T> => {
@@ -164,16 +280,29 @@ function createMockDrizzleDb(): MimoraDatabase {
   return mockDbInstance;
 }
 
-function getOrCreateDb():
+function getOrCreateTiDb():
   | { ok: true; db: MimoraDatabase }
-  | { ok: false; error: SanitizedDbError } {
-  const envCheck = validateTiDbEnv();
-  if (!envCheck.ok) {
-    return { ok: false, error: envCheck.error };
+  | { ok: false; mode: DatabaseMode; error: SanitizedDbError } {
+  const policy = resolveDatabasePolicy(process.env);
+  if (!policy.ok) {
+    return { ok: false, mode: policy.mode, error: policy.error };
+  }
+
+  if (policy.mode === 'mock') {
+    return {
+      ok: false,
+      mode: 'mock',
+      error: {
+        httpStatus: 500,
+        code: 'DB_MOCK_MODE_ACTIVE',
+        message:
+          'Database is running in explicit non-persistent mock mode (MIMORA_DB_MODE=mock); real TiDB is not connected.',
+      },
+    };
   }
 
   if (!poolInstance || !dbInstance) {
-    const { config } = envCheck;
+    const { config } = policy;
     try {
       poolInstance = mysql.createPool({
         host: config.host,
@@ -194,7 +323,7 @@ function getOrCreateDb():
       });
       dbInstance = drizzle(poolInstance, { schema, mode: 'default' });
     } catch (err) {
-      return { ok: false, error: sanitizeDbError(err) };
+      return { ok: false, mode: 'tidb', error: sanitizeDbError(err) };
     }
   }
 
@@ -202,15 +331,25 @@ function getOrCreateDb():
 }
 
 export function getDb(): MimoraDatabase {
-  const dbLookup = getOrCreateDb();
-  if (!dbLookup.ok) {
+  const policy = resolveDatabasePolicy(process.env);
+
+  if (policy.mode === 'mock') {
     if (!hasWarnedMockDb) {
       hasWarnedMockDb = true;
       console.warn(
-        `[AI Studio] Database not connected (${dbLookup.error.code}) — using mock Drizzle instance`
+        '[mimora-db] Explicit mock database mode active (MIMORA_DB_MODE=mock) — ephemeral no-op Drizzle instance, NO durable persistence.'
       );
     }
     return createMockDrizzleDb();
+  }
+
+  if (!policy.ok) {
+    throw createSanitizedDbAppError(policy.error);
+  }
+
+  const dbLookup = getOrCreateTiDb();
+  if (!dbLookup.ok) {
+    throw createSanitizedDbAppError(dbLookup.error);
   }
   return dbLookup.db;
 }
@@ -322,12 +461,16 @@ export function sanitizeDbError(err: unknown): SanitizedDbError {
   };
 }
 
-export async function checkTiDbHealth(): Promise<
-  { ok: true; data: DbHealthResult } | { ok: false; error: SanitizedDbError }
-> {
-  const dbLookup = getOrCreateDb();
+export async function checkTiDbHealth(): Promise<DbHealthCheckResponse> {
+  const dbLookup = getOrCreateTiDb();
   if (!dbLookup.ok) {
-    return { ok: false, error: dbLookup.error };
+    return {
+      ok: false,
+      mode: dbLookup.mode,
+      database: dbLookup.mode === 'mock' ? 'mock_ephemeral' : 'disconnected',
+      durablePersistence: false,
+      error: dbLookup.error,
+    };
   }
 
   const startedAt = performance.now();
@@ -346,6 +489,8 @@ export async function checkTiDbHealth(): Promise<
       data: {
         status: 'ok',
         database: 'connected',
+        mode: 'tidb',
+        durablePersistence: true,
         orm: 'drizzle',
         driver: 'mysql2',
         tls: 'required-min-v1.2-verified',
@@ -356,12 +501,17 @@ export async function checkTiDbHealth(): Promise<
   } catch (err: unknown) {
     return {
       ok: false,
+      mode: 'tidb',
+      database: 'disconnected',
+      durablePersistence: false,
       error: sanitizeDbError(err),
     };
   }
 }
 
 export async function closeTiDbPool(): Promise<void> {
+  mockDbInstance = null;
+  hasWarnedMockDb = false;
   if (poolInstance) {
     const pool = poolInstance;
     poolInstance = null;

@@ -242,7 +242,7 @@ describe('P4-01 Frontend Unit & SSR Tests: Guardian Portal, Verification, Invita
         createElement(StudentLayout)
       )
     );
-    assert.ok(layoutHtml.includes('Không gian gia đình'));
+    assert.ok(layoutHtml.includes('Không gian Gia đình'));
 
     const homeHtml = renderToString(
       createElement(StudentHomePage, {

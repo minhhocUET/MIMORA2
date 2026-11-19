@@ -351,7 +351,7 @@ export function createAttemptsRouters(deps?: AttemptsRoutersDeps) {
         const result = await attemptService.abandonAttempt(
           {
             attemptId: params.attemptId,
-            confirmed: body.confirmed,
+            confirmed: body.confirmed === true,
             durationSeconds: body.durationSeconds,
           },
           {
