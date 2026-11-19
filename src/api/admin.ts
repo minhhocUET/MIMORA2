@@ -2,6 +2,7 @@ import { apiRequest } from './client.ts';
 import type { CanonicalContentType } from '../types/chapter.ts';
 import type {
   AccountStatus,
+  AdminFamilyWorkspaceCandidate,
   AdminInsightsResponseView,
   ClassStatus,
   ClassStudentRoster,
@@ -9,12 +10,15 @@ import type {
   ContentMetadataJson,
   CsvImportJobView,
   CsvImportRunResponse,
+  FamilyProgramAvailabilityMode,
   InsightContentScope,
   InsightPeriodType,
   MembershipRole,
   MembershipStatus,
   OrganizationStatus,
   PaginatedResult,
+  SafeAdminProgramDetailResponse,
+  SafeAdminProgramSummaryView,
   SafeAdminUserView,
   SafeClassView,
   SafeContentApprovalView,
@@ -23,6 +27,7 @@ import type {
   SafeMembershipView,
   SafeOrganizationView,
 } from '../types/admin.ts';
+import type { SafeInvitationStatusView } from '../types/guardian.ts';
 
 function buildQuery(params: Record<string, string | number | boolean | undefined | null>): string {
   const sp = new URLSearchParams();
@@ -465,6 +470,206 @@ export const adminApi = {
     return apiRequest<{ status: 'ok'; insights: AdminInsightsResponseView }>(
       `/admin/insights${buildQuery(query)}`,
       { method: 'GET', fetchImpl }
+    );
+  },
+
+  // School Student -> Guardian Link Invitations
+  listStudentGuardianInvitations(
+    orgId: string,
+    membershipId: string,
+    fetchImpl?: typeof fetch
+  ) {
+    return apiRequest<{ status: 'ok'; invitations: SafeInvitationStatusView[] }>(
+      `/admin/organizations/${encodeURIComponent(orgId)}/students/${encodeURIComponent(membershipId)}/guardian-invitations`,
+      { method: 'GET', fetchImpl }
+    );
+  },
+
+  createStudentGuardianInvitation(
+    orgId: string,
+    membershipId: string,
+    body: { expiresInHours?: number } = {},
+    fetchImpl?: typeof fetch
+  ) {
+    return apiRequest<{
+      status: 'ok';
+      invitation: SafeInvitationStatusView;
+      claimCode: string;
+    }>(
+      `/admin/organizations/${encodeURIComponent(orgId)}/students/${encodeURIComponent(membershipId)}/guardian-invitations`,
+      { method: 'POST', body, fetchImpl }
+    );
+  },
+
+  revokeStudentGuardianInvitation(
+    orgId: string,
+    invitationId: string,
+    fetchImpl?: typeof fetch
+  ) {
+    return apiRequest<{
+      status: 'ok';
+      invitation: { id: string; status: 'revoked'; revokedAt: string };
+    }>(
+      `/admin/organizations/${encodeURIComponent(orgId)}/guardian-invitations/${encodeURIComponent(invitationId)}/revoke`,
+      { method: 'POST', body: {}, fetchImpl }
+    );
+  },
+
+  // Family Curriculum & Program Enrollments (P4-02)
+  listFamilyPrograms(fetchImpl?: typeof fetch) {
+    return apiRequest<{ status: 'ok'; programs: SafeAdminProgramSummaryView[] }>(
+      '/admin/family-programs',
+      { method: 'GET', fetchImpl }
+    );
+  },
+
+  getFamilyProgramDetail(programId: string, fetchImpl?: typeof fetch) {
+    return apiRequest<{ status: 'ok' } & SafeAdminProgramDetailResponse>(
+      `/admin/family-programs/${encodeURIComponent(programId)}`,
+      { method: 'GET', fetchImpl }
+    );
+  },
+
+  createFamilyProgram(
+    body: {
+      slug: string;
+      availabilityMode?: FamilyProgramAvailabilityMode;
+      title: string;
+      description?: string | null;
+      locale?: 'vi' | 'vi-VN' | 'en' | 'en-US';
+      ageBand?: string | null;
+      items: Array<{
+        chapterNumber: number;
+        chapterTitle: string;
+        contentVersionId: string;
+      }>;
+    },
+    fetchImpl?: typeof fetch
+  ) {
+    return apiRequest<{ status: 'ok' } & SafeAdminProgramDetailResponse>(
+      '/admin/family-programs',
+      { method: 'POST', body, fetchImpl }
+    );
+  },
+
+  createFamilyProgramVersion(
+    programId: string,
+    body: {
+      availabilityMode?: FamilyProgramAvailabilityMode;
+      title: string;
+      description?: string | null;
+      locale?: 'vi' | 'vi-VN' | 'en' | 'en-US';
+      ageBand?: string | null;
+      items: Array<{
+        chapterNumber: number;
+        chapterTitle: string;
+        contentVersionId: string;
+      }>;
+    },
+    fetchImpl?: typeof fetch
+  ) {
+    return apiRequest<
+      { status: 'ok'; createdVersionId: string } & SafeAdminProgramDetailResponse
+    >(
+      `/admin/family-programs/${encodeURIComponent(programId)}/versions`,
+      { method: 'POST', body, fetchImpl }
+    );
+  },
+
+  updateDraftFamilyProgramVersion(
+    programId: string,
+    versionId: string,
+    body: {
+      availabilityMode?: FamilyProgramAvailabilityMode;
+      title: string;
+      description?: string | null;
+      locale?: 'vi' | 'vi-VN' | 'en' | 'en-US';
+      ageBand?: string | null;
+      items: Array<{
+        chapterNumber: number;
+        chapterTitle: string;
+        contentVersionId: string;
+      }>;
+    },
+    fetchImpl?: typeof fetch
+  ) {
+    return apiRequest<{ status: 'ok' } & SafeAdminProgramDetailResponse>(
+      `/admin/family-programs/${encodeURIComponent(programId)}/versions/${encodeURIComponent(versionId)}`,
+      { method: 'PATCH', body, fetchImpl }
+    );
+  },
+
+  publishFamilyProgramVersion(
+    programId: string,
+    versionId: string,
+    fetchImpl?: typeof fetch
+  ) {
+    return apiRequest<{ status: 'ok' } & SafeAdminProgramDetailResponse>(
+      `/admin/family-programs/${encodeURIComponent(programId)}/versions/${encodeURIComponent(versionId)}/publish`,
+      { method: 'POST', body: {}, fetchImpl }
+    );
+  },
+
+  retireFamilyProgram(programId: string, fetchImpl?: typeof fetch) {
+    return apiRequest<{ status: 'ok' } & SafeAdminProgramDetailResponse>(
+      `/admin/family-programs/${encodeURIComponent(programId)}/retire`,
+      { method: 'POST', body: {}, fetchImpl }
+    );
+  },
+
+  listEligibleFamilyWorkspaces(search?: string, fetchImpl?: typeof fetch) {
+    return apiRequest<{
+      status: 'ok';
+      workspaces: AdminFamilyWorkspaceCandidate[];
+    }>(`/admin/family-workspaces${buildQuery({ search })}`, {
+      method: 'GET',
+      fetchImpl,
+    });
+  },
+
+  enrollStudentInFamilyProgram(
+    programId: string,
+    body: {
+      familyWorkspaceId: string;
+      studentUserId: string;
+      programVersionId?: string;
+    },
+    fetchImpl?: typeof fetch
+  ) {
+    return apiRequest<{
+      status: 'ok';
+      enrollment: {
+        enrollmentId: string;
+        familyWorkspaceId: string;
+        studentUserId: string;
+        familyProgramId: string;
+        familyProgramVersionId: string;
+        versionNumber: number;
+        activationSource: string;
+        status: string;
+        activatedAt: string;
+      };
+    }>(`/admin/family-programs/${encodeURIComponent(programId)}/enrollments`, {
+      method: 'POST',
+      body,
+      fetchImpl,
+    });
+  },
+
+  revokeFamilyProgramEnrollment(
+    enrollmentId: string,
+    fetchImpl?: typeof fetch
+  ) {
+    return apiRequest<{
+      status: 'ok';
+      enrollment: {
+        enrollmentId: string;
+        status: 'revoked';
+        revokedAt: string;
+      };
+    }>(
+      `/admin/family-enrollments/${encodeURIComponent(enrollmentId)}/revoke`,
+      { method: 'POST', body: {}, fetchImpl }
     );
   },
 };

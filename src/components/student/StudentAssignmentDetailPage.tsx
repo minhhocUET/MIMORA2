@@ -25,6 +25,7 @@ import {
 
 export interface StudentAssignmentDetailPageProps {
   assignment: SafeStudentAssignmentDetailView | null;
+  sourceContext?: 'school' | 'family';
   loading: boolean;
   error: string | null;
   onRetryLoad: () => void;
@@ -34,6 +35,7 @@ export interface StudentAssignmentDetailPageProps {
 
 export function StudentAssignmentDetailPage({
   assignment,
+  sourceContext = 'school',
   loading,
   error,
   onRetryLoad,
@@ -41,9 +43,10 @@ export function StudentAssignmentDetailPage({
   onStartWorkspace,
 }: StudentAssignmentDetailPageProps) {
   const [guideOpen, setGuideOpen] = useState(false);
+  const isFamily = sourceContext === 'family';
 
   if (loading) {
-    return <LoadingState label="Đang mở chi tiết bài tập..." />;
+    return <LoadingState label={isFamily ? 'Đang mở chi tiết chương trình gia đình...' : 'Đang mở chi tiết bài tập...'} />;
   }
 
   if (error || !assignment) {
@@ -60,14 +63,14 @@ export function StudentAssignmentDetailPage({
         </Button>
         <Alert
           variant="danger"
-          title="Không thể mở chi tiết bài tập"
+          title={isFamily ? 'Không thể mở chương trình gia đình' : 'Không thể mở chi tiết bài tập'}
           action={
             <Button type="button" variant="outline" size="sm" onClick={onRetryLoad}>
               Thử lại
             </Button>
           }
         >
-          {error ?? 'Không tìm thấy bài tập được giao cho tài khoản của con.'}
+          {error ?? (isFamily ? 'Không tìm thấy chương trình gia đình trong tài khoản của con.' : 'Không tìm thấy bài tập được giao cho tài khoản của con.')}
         </Alert>
       </div>
     );
@@ -90,7 +93,7 @@ export function StudentAssignmentDetailPage({
           Quay lại Trang chính
         </Button>
 
-        {assignment.homePractice.hasInstructions && (
+        {!isFamily && assignment.homePractice.hasInstructions && (
           <Button
             type="button"
             variant="secondary"
@@ -110,7 +113,7 @@ export function StudentAssignmentDetailPage({
         title={assignment.title}
         description={
           assignment.isReadOnly
-            ? 'Bài tập này đã kết thúc thời gian làm bài. Con vẫn có thể xem lại toàn bộ thẻ nội dung và nghe đọc to thoải mái.'
+            ? 'Hoạt động này đang ở chế độ xem lại. Con vẫn có thể xem toàn bộ thẻ nội dung và nghe đọc to thoải mái.'
             : 'Con có thể bắt đầu từ hoạt động đầu tiên hoặc tiếp tục từ nơi con đã dừng lại. Mọi bước đã lưu đều an toàn.'
         }
         action={
@@ -132,52 +135,75 @@ export function StudentAssignmentDetailPage({
         }
       />
 
-      {/* Informational date & Home Practice instructions */}
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-4">
-        <Card tone="mint" padding="md" className="lg:col-span-5 space-y-2">
+      {/* Informational guidance: School Due/Home-Practice vs Teacher-Free Family Program */}
+      {isFamily ? (
+        <Card tone="mint" padding="md" className="space-y-2">
           <p className="text-xs font-semibold text-[var(--mimora-primary)] flex items-center gap-1.5">
-            <Calendar className="h-4 w-4 shrink-0" aria-hidden="true" />
-            <span>Thông tin nhẹ nhàng</span>
-          </p>
-          <p className="text-sm text-[var(--mimora-text)]">
-            <span className="font-semibold">Ngày gợi ý hoàn thành: </span>
-            {formatDueDateVi(assignment.dueAt)}
-          </p>
-          <p className="text-xs text-[var(--mimora-muted)] leading-relaxed">
-            {assignment.isPastDue
-              ? 'Đã qua ngày gợi ý nhưng hoàn toàn không có điểm phạt. Con cứ làm khi thấy sẵn sàng nhé.'
-              : 'Ngày gợi ý chỉ để thầy cô và gia đình sắp xếp thời gian thuận tiện, không giới hạn giờ làm.'}
-          </p>
-        </Card>
-
-        <Card tone="butter" padding="md" className="lg:col-span-7 space-y-2">
-          <p className="text-xs font-semibold text-[var(--mimora-warning)] flex items-center gap-1.5">
             <BookOpen className="h-4 w-4 shrink-0" aria-hidden="true" />
-            <span>Hướng dẫn thực hành tại nhà (từ thầy cô)</span>
+            <span>Chương trình học tập trong Không gian Gia đình</span>
           </p>
-          {assignment.homePractice.hasInstructions ? (
-            <p className="text-sm text-[var(--mimora-text)] leading-relaxed whitespace-pre-line">
-              {assignment.homePractice.instructions}
-            </p>
-          ) : (
-            <p className="text-sm text-[var(--mimora-muted)]">
-              Thầy cô chưa thêm ghi chú riêng cho phần thực hành tại nhà. Con cứ thực hành trực tiếp
-              trên từng thẻ bên dưới nhé.
-            </p>
-          )}
+          <p className="text-sm text-[var(--mimora-text)] leading-relaxed">
+            {assignment.homePractice.instructions ||
+              'Con tự do khám phá từng hoạt động theo nhịp độ của riêng mình. Không cần giáo viên, không có hạn nộp và không chấm điểm.'}
+          </p>
         </Card>
-      </div>
+      ) : (
+        <div className="grid grid-cols-1 lg:grid-cols-12 gap-4">
+          <Card tone="mint" padding="md" className="lg:col-span-5 space-y-2">
+            <p className="text-xs font-semibold text-[var(--mimora-primary)] flex items-center gap-1.5">
+              <Calendar className="h-4 w-4 shrink-0" aria-hidden="true" />
+              <span>Thông tin nhẹ nhàng</span>
+            </p>
+            <p className="text-sm text-[var(--mimora-text)]">
+              <span className="font-semibold">Ngày gợi ý hoàn thành: </span>
+              {formatDueDateVi(assignment.dueAt)}
+            </p>
+            <p className="text-xs text-[var(--mimora-muted)] leading-relaxed">
+              {assignment.isPastDue
+                ? 'Đã qua ngày gợi ý nhưng hoàn toàn không có điểm phạt. Con cứ làm khi thấy sẵn sàng nhé.'
+                : 'Ngày gợi ý chỉ để thầy cô và gia đình sắp xếp thời gian thuận tiện, không giới hạn giờ làm.'}
+            </p>
+          </Card>
+
+          <Card tone="butter" padding="md" className="lg:col-span-7 space-y-2">
+            <p className="text-xs font-semibold text-[var(--mimora-warning)] flex items-center gap-1.5">
+              <BookOpen className="h-4 w-4 shrink-0" aria-hidden="true" />
+              <span>Hướng dẫn thực hành tại nhà (từ thầy cô)</span>
+            </p>
+            {assignment.homePractice.hasInstructions ? (
+              <p className="text-sm text-[var(--mimora-text)] leading-relaxed whitespace-pre-line">
+                {assignment.homePractice.instructions}
+              </p>
+            ) : (
+              <p className="text-sm text-[var(--mimora-muted)]">
+                Thầy cô chưa thêm ghi chú riêng cho phần thực hành tại nhà. Con cứ thực hành trực tiếp
+                trên từng thẻ bên dưới nhé.
+              </p>
+            )}
+          </Card>
+        </div>
+      )}
 
       {/* 3-Session · 6-Step Overview with actual pinned items */}
       <Card tone="default" padding="lg" className="space-y-4">
         <CardHeader
-          title="Các hoạt động đã gắn trong bài tập (3 Buổi · 6 Bước)"
-          description="Mỗi thẻ đều gắn phiên bản nội dung đã duyệt từ thầy cô. Chạm vào bất kỳ hoạt động nào để mở."
+          title={
+            isFamily
+              ? 'Các hoạt động trong Chương trình Gia đình'
+              : 'Các hoạt động đã gắn trong bài tập (3 Buổi · 6 Bước)'
+          }
+          description={
+            isFamily
+              ? 'Mỗi hoạt động sử dụng phiên bản nội dung SEL đã được phê duyệt. Chạm vào bất kỳ hoạt động nào để mở.'
+              : 'Mỗi thẻ đều gắn phiên bản nội dung đã duyệt từ thầy cô. Chạm vào bất kỳ hoạt động nào để mở.'
+          }
         />
         <CardContent className="space-y-4">
           {placements.length === 0 ? (
             <Alert variant="info">
-              Bài tập này hiện chưa có thẻ hoạt động nào được gắn. Con hãy báo thầy cô kiểm tra lại nhé.
+              {isFamily
+                ? 'Chương trình này hiện chưa có thẻ hoạt động nào.'
+                : 'Bài tập này hiện chưa có thẻ hoạt động nào được gắn. Con hãy báo thầy cô kiểm tra lại nhé.'}
             </Alert>
           ) : (
             <div className="space-y-3">

@@ -34,13 +34,14 @@ export const organizations = mysqlTable(
 );
 
 /**
- * 3.2 users (Global core identity; email nullable for students; platform_role only 'platform_admin' | NULL)
+ * 3.2 users (Global core identity; email nullable for students; platform_role only 'platform_admin' | 'guardian' | NULL)
  */
 export const users = mysqlTable(
   'users',
   {
     id: uuidChar36('id').primaryKey().notNull(),
     email: emailVarchar255('email'),
+    emailVerifiedAt: datetime('email_verified_at', { fsp: 3 }),
     platformUsername: asciiVarchar64('platform_username'),
     platformRole: varchar('platform_role', { length: 32 }),
     displayName: varchar('display_name', { length: 255 }).notNull(),

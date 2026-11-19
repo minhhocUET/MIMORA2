@@ -351,3 +351,101 @@ export interface PaginatedResult<T> {
   limit: number;
   total: number;
 }
+
+export type FamilyProgramAvailabilityMode = 'admin_assigned' | 'free_family';
+export type FamilyProgramStatus = 'draft' | 'published' | 'retired';
+
+export interface SafeAdminProgramItemView {
+  id: string;
+  chapterNumber: number;
+  chapterTitle: string;
+  sortOrder: number;
+  contentVersionId: string;
+  contentItemId: string;
+  contentSlug: string;
+  contentType: string;
+  contentVersionNumber: number;
+  contentStatus: string;
+  contentTitle: string;
+  contentSummary: string | null;
+  contentLocale: string;
+  payloadJson: Record<string, unknown>;
+}
+
+export interface SafeAdminProgramVersionView {
+  id: string;
+  familyProgramId: string;
+  versionNumber: number;
+  status: string;
+  title: string;
+  description: string | null;
+  locale: string;
+  ageBand: string | null;
+  availabilityMode: string;
+  publishedAt: string | null;
+  retiredAt: string | null;
+  createdAt: string;
+  updatedAt: string;
+  items?: SafeAdminProgramItemView[];
+}
+
+export interface SafeAdminProgramSummaryView {
+  id: string;
+  slug: string;
+  availabilityMode: FamilyProgramAvailabilityMode | string;
+  status: FamilyProgramStatus | string;
+  currentPublishedVersionId: string | null;
+  latestVersionNumber: number;
+  latestVersionId: string;
+  latestVersionStatus: string;
+  title: string;
+  description: string | null;
+  locale: string;
+  ageBand: string | null;
+  retiredAt: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface SafeAdminProgramEnrollmentRow {
+  enrollmentId: string;
+  familyWorkspaceId: string;
+  workspaceCode: string;
+  workspaceName: string;
+  studentUserId: string;
+  studentDisplayName: string;
+  familyUsername: string | null;
+  familyProgramVersionId: string;
+  versionNumber: number;
+  activationSource: string;
+  status: string;
+  activatedAt: string;
+  revokedAt: string | null;
+}
+
+export interface SafeAdminProgramDetailResponse {
+  program: {
+    id: string;
+    slug: string;
+    availabilityMode: string;
+    status: string;
+    currentPublishedVersionId: string | null;
+    retiredAt: string | null;
+    createdAt: string;
+    updatedAt: string;
+  };
+  versions: SafeAdminProgramVersionView[];
+  enrollments: SafeAdminProgramEnrollmentRow[];
+}
+
+export interface AdminFamilyWorkspaceCandidate {
+  workspaceId: string;
+  workspaceCode: string;
+  workspaceName: string;
+  students: Array<{
+    studentUserId: string;
+    displayName: string;
+    familyUsername: string;
+    activeGuardianCount: number;
+  }>;
+}

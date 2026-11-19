@@ -27,6 +27,20 @@ const EXPECTED_TABLES = [
   'teacher_observations',
   'org_insight_daily_snapshots',
   'audit_logs',
+  'email_verification_tokens',
+  'family_workspaces',
+  'family_memberships',
+  'family_students',
+  'student_link_invitations',
+  'guardian_student_links',
+  'student_link_invitation_students',
+  'family_programs',
+  'family_program_versions',
+  'family_program_items',
+  'family_program_enrollments',
+  'family_activity_attempts',
+  'family_activity_attempt_turns',
+  'student_family_preferences',
 ] as const;
 
 const ALL_TABLES = [
@@ -52,6 +66,20 @@ const ALL_TABLES = [
   schema.teacherObservations,
   schema.orgInsightDailySnapshots,
   schema.auditLogs,
+  schema.emailVerificationTokens,
+  schema.familyWorkspaces,
+  schema.familyMemberships,
+  schema.familyStudents,
+  schema.studentLinkInvitations,
+  schema.guardianStudentLinks,
+  schema.studentLinkInvitationStudents,
+  schema.familyPrograms,
+  schema.familyProgramVersions,
+  schema.familyProgramItems,
+  schema.familyProgramEnrollments,
+  schema.familyActivityAttempts,
+  schema.familyActivityAttemptTurns,
+  schema.studentFamilyPreferences,
 ];
 
 test('generateUuidV7 produces valid RFC 9562 lowercase UUIDv7 values', () => {
@@ -68,7 +96,7 @@ test('generateUuidV7 produces valid RFC 9562 lowercase UUIDv7 values', () => {
   }
 });
 
-test('Drizzle schema defines exact 22 tables with standardized ascii_bin UUID PKs', () => {
+test('Drizzle schema defines exact 36 tables with standardized ascii_bin UUID PKs', () => {
   const configs = ALL_TABLES.map((t) => getTableConfig(t));
   const actualNames = configs.map((c) => c.name).sort();
   const expectedNames = [...EXPECTED_TABLES].sort();
@@ -88,7 +116,7 @@ test('Drizzle schema defines exact 22 tables with standardized ascii_bin UUID PK
   }
 });
 
-test('Drizzle schema defines all 29 composite FKs, 51 total FKs, 30 explicit indexes, and virtual unique guards', () => {
+test('Drizzle schema defines all 34 composite FKs, 94 total FKs, 49 explicit indexes, and virtual unique guards', () => {
   const configs = ALL_TABLES.map((t) => getTableConfig(t));
   const fkMap = new Map<string, { table: string; columns: string[]; foreignColumns: string[] }>();
   const uniqueNames = new Set<string>();
@@ -117,11 +145,11 @@ test('Drizzle schema defines all 29 composite FKs, 51 total FKs, 30 explicit ind
     }
   }
 
-  assert.equal(fkMap.size, 51);
-  assert.equal(compositeFkCount, 29);
-  assert.equal(explicitIndexCount, 30);
+  assert.equal(fkMap.size, 94);
+  assert.equal(compositeFkCount, 34);
+  assert.equal(explicitIndexCount, 49);
 
-  // Key composite FKs required by P1-02R & P1-02R-FIX1
+  // Key composite FKs required by P1-02R, P1-02R-FIX1, and P4-02
   assert.deepEqual(fkMap.get('fk_sessions_active_org_membership')?.columns, [
     'active_organization_id',
     'user_id',
@@ -129,6 +157,24 @@ test('Drizzle schema defines all 29 composite FKs, 51 total FKs, 30 explicit ind
   assert.deepEqual(fkMap.get('fk_content_items_pub_version')?.columns, [
     'id',
     'current_published_version_id',
+  ]);
+  assert.deepEqual(fkMap.get('fk_family_programs_pub_version')?.columns, [
+    'id',
+    'current_published_version_id',
+  ]);
+  assert.deepEqual(fkMap.get('fk_family_enrollments_prog_version')?.columns, [
+    'family_program_id',
+    'family_program_version_id',
+  ]);
+  assert.deepEqual(fkMap.get('fk_family_attempts_enrollment')?.columns, [
+    'student_user_id',
+    'family_program_version_id',
+    'enrollment_id',
+  ]);
+  assert.deepEqual(fkMap.get('fk_family_attempts_item')?.columns, [
+    'family_program_version_id',
+    'content_version_id',
+    'family_program_item_id',
   ]);
   assert.deepEqual(fkMap.get('fk_attempts_target')?.columns, [
     'organization_id',
@@ -170,4 +216,8 @@ test('Drizzle schema defines all 29 composite FKs, 51 total FKs, 30 explicit ind
   assert.ok(uniqueNames.has('uq_class_enrollments_active_pair'));
   assert.ok(uniqueNames.has('uq_approvals_single_pending'));
   assert.ok(uniqueNames.has('uq_attempts_single_in_progress'));
+  assert.ok(uniqueNames.has('uq_family_memberships_active_pair'));
+  assert.ok(uniqueNames.has('uq_gs_links_active_triple'));
+  assert.ok(uniqueNames.has('uq_family_enrollments_active_triple'));
+  assert.ok(uniqueNames.has('uq_family_attempts_single_in_progress'));
 });

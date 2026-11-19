@@ -1,7 +1,7 @@
 import { getServerConfig, type ServerConfig } from '../config/env.ts';
 import type { OrgRole, SessionScope } from '../db/schema/_shared.ts';
 import { generateUuidV7 } from '../db/uuid.ts';
-import { AppError } from '../http/errors.ts';
+import { ApiErrors, AppError } from '../http/errors.ts';
 import {
   createAuthRepository,
   type AuthCredentialUserRecord,
@@ -10,7 +10,11 @@ import {
   type DbOrTx,
 } from '../repositories/auth.repository.ts';
 import { deriveSessionCsrfToken } from '../security/csrf.ts';
-import { hashPassword, verifyPassword } from '../security/password-hash.ts';
+import {
+  hashPassword,
+  validatePasswordInput,
+  verifyPassword,
+} from '../security/password-hash.ts';
 import { InMemoryRateLimiter, RateLimitExceededError } from '../security/rate-limit.ts';
 import { ScryptConcurrencyLimiter } from '../security/scrypt-limiter.ts';
 import {
@@ -33,6 +37,10 @@ import {
 const DUMMY_SCRYPT_HASH =
   'scrypt$v1$N=65536,r=8,p=2,dkLen=32$AAAAAAAAAAAAAAAAAAAAAA$AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA';
 
+const GUARDIAN_EMAIL_VERIFY_PURPOSE = 'guardian_email_verify' as const;
+const EMAIL_VERIFY_TTL_MS = 24 * 60 * 60 * 1000;
+const MIN_GUARDIAN_PASSWORD_LENGTH = 8;
+
 export type LoginInput =
   | {
       mode: 'admin_teacher';
@@ -43,6 +51,11 @@ export type LoginInput =
       mode: 'student';
       organizationCode: string;
       orgUsername: string;
+      password: string;
+    }
+  | {
+      mode: 'guardian';
+      email: string;
       password: string;
     };
 
@@ -57,7 +70,8 @@ export interface SafeUserView {
   displayName: string;
   email: string | null;
   platformUsername: string | null;
-  platformRole: 'platform_admin' | null;
+  platformRole: 'platform_admin' | 'guardian' | null;
+  emailVerified?: boolean;
 }
 
 export interface SafeOrganizationChoice {
@@ -80,6 +94,7 @@ export interface AuthContextPayload {
   activeOrganization: SafeOrganizationChoice | null;
   organizations: SafeOrganizationChoice[];
   requiresOrganizationSelection: boolean;
+  requiresEmailVerification?: boolean;
   csrfToken: string;
 }
 
@@ -91,7 +106,9 @@ export interface AuthSessionResult {
 
 export interface AuthenticatedPrincipal {
   userId: string;
-  platformRole: 'platform_admin' | null;
+  platformRole: 'platform_admin' | 'guardian' | null;
+  emailVerified?: boolean;
+  hasFamilyContext?: boolean;
   activeOrganizationId: string | null;
   organizationMembershipId: string | null;
   organizationRole: OrgRole | null;
@@ -100,6 +117,19 @@ export interface AuthenticatedPrincipal {
   displayName: string;
   email: string | null;
   platformUsername: string | null;
+}
+
+export interface MailDeliveryStatus {
+  configured: false;
+  provider: null;
+  delivered: false;
+  verificationState: 'pending_verification';
+}
+
+export interface GuardianRegistrationResult {
+  user: SafeUserView;
+  requiresEmailVerification: true;
+  mailDelivery: MailDeliveryStatus;
 }
 
 function invalidCredentialsError(): AppError {
@@ -134,6 +164,29 @@ function toSafeOrganizationChoice(m: AuthMembershipSummary): SafeOrganizationCho
   };
 }
 
+function resolveAuditActorRole(principal: AuthenticatedPrincipal): AuditActorRole {
+  if (principal.platformRole === 'platform_admin') {
+    return 'platform_admin';
+  }
+  if (principal.platformRole === 'guardian' || principal.sessionScope === 'guardian') {
+    return 'guardian';
+  }
+  if (principal.organizationRole === 'teacher' || principal.sessionScope === 'teacher') {
+    return 'teacher';
+  }
+  return 'student';
+}
+
+function buildUnsupportedStorageError(): AppError {
+  return new AppError({
+    httpStatus: 500,
+    code: 'AUTH_STORAGE_NOT_CONFIGURED',
+    messageKey: 'error.auth.storage_not_configured',
+    message: 'Bộ lưu trữ xác thực người giám hộ chưa được cấu hình đầy đủ.',
+    expose: false,
+  });
+}
+
 export interface AuthServiceDeps {
   repo?: AuthRepository;
   rateLimiter?: InMemoryRateLimiter;
@@ -146,6 +199,11 @@ export interface AuthServiceDeps {
   ) => Promise<unknown>;
   verifyPasswordFn?: typeof verifyPassword;
   hashPasswordFn?: typeof hashPassword;
+  onVerificationTokenCreatedForTest?: (info: {
+    userId: string;
+    rawToken: string;
+    tokenHash: string;
+  }) => void;
 }
 
 export function createAuthService(deps?: AuthServiceDeps) {
@@ -173,7 +231,8 @@ export function createAuthService(deps?: AuthServiceDeps) {
   async function enforcePreAuthRateLimit(
     ip: string | undefined,
     identifierKey: string,
-    ipPrefix: string | null
+    ipPrefix: string | null,
+    targetType: string = 'auth_login'
   ): Promise<void> {
     const config = getConfig();
     const nowMs = nowFn().getTime();
@@ -188,7 +247,7 @@ export function createAuthService(deps?: AuthServiceDeps) {
     if (!ipCheck.allowed) {
       await safeAudit({
         eventType: 'security.rate_limit_triggered',
-        targetType: 'auth_login',
+        targetType,
         ipPrefix,
         metadata: { bucket: 'ip' },
       }).catch(() => undefined);
@@ -205,7 +264,7 @@ export function createAuthService(deps?: AuthServiceDeps) {
     if (!idCheck.allowed) {
       await safeAudit({
         eventType: 'security.rate_limit_triggered',
-        targetType: 'auth_login',
+        targetType,
         ipPrefix,
         metadata: { bucket: 'identifier' },
       }).catch(() => undefined);
@@ -236,6 +295,12 @@ export function createAuthService(deps?: AuthServiceDeps) {
     const now = nowFn();
     const config = getConfig();
     const lockoutPolicy = getLockoutPolicy(config);
+    const failedActorRole: AuditActorRole | null =
+      user?.platformRole === 'platform_admin'
+        ? 'platform_admin'
+        : user?.platformRole === 'guardian'
+          ? 'guardian'
+          : null;
 
     if (user) {
       const outcome = await repo.recordFailedLoginAttempt(user.id, now, lockoutPolicy);
@@ -243,8 +308,7 @@ export function createAuthService(deps?: AuthServiceDeps) {
         await safeAudit({
           organizationId,
           actorUserId: user.id,
-          actorRole:
-            user.platformRole === 'platform_admin' ? 'platform_admin' : null,
+          actorRole: failedActorRole,
           eventType: 'auth.account_locked',
           targetType: 'user',
           targetId: user.id,
@@ -260,8 +324,7 @@ export function createAuthService(deps?: AuthServiceDeps) {
     await safeAudit({
       organizationId,
       actorUserId: user?.id ?? null,
-      actorRole:
-        user?.platformRole === 'platform_admin' ? 'platform_admin' : null,
+      actorRole: failedActorRole,
       eventType: 'auth.login_failed',
       targetType: 'user',
       targetId: user?.id ?? null,
@@ -276,6 +339,379 @@ export function createAuthService(deps?: AuthServiceDeps) {
   return {
     scryptLimiter,
     rateLimiter,
+
+    async registerGuardian(
+      input: {
+        displayName: string;
+        email: string;
+        password: string;
+      },
+      ctx: LoginRequestContext
+    ): Promise<GuardianRegistrationResult> {
+      const normalizedDisplayName = input.displayName.trim();
+      const normalizedEmail = input.email.trim().toLowerCase();
+
+      if (!normalizedDisplayName || normalizedDisplayName.length > 255) {
+        throw ApiErrors.validation([
+          {
+            field: 'body.displayName',
+            code: 'INVALID_DISPLAY_NAME',
+            messageKey: 'error.account.invalid_display_name',
+            message: 'Tên hiển thị phải từ 1 đến 255 ký tự.',
+          },
+        ]);
+      }
+
+      if (
+        !normalizedEmail ||
+        normalizedEmail.length > 255 ||
+        !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(normalizedEmail)
+      ) {
+        throw ApiErrors.validation([
+          {
+            field: 'body.email',
+            code: 'INVALID_EMAIL',
+            messageKey: 'error.account.invalid_email',
+            message: 'Địa chỉ email không hợp lệ.',
+          },
+        ]);
+      }
+
+      if (input.password.length < MIN_GUARDIAN_PASSWORD_LENGTH) {
+        throw ApiErrors.validation([
+          {
+            field: 'body.password',
+            code: 'PASSWORD_TOO_SHORT',
+            messageKey: 'error.account.password_too_short',
+            message: `Mật khẩu phải có ít nhất ${MIN_GUARDIAN_PASSWORD_LENGTH} ký tự.`,
+          },
+        ]);
+      }
+
+      try {
+        validatePasswordInput(input.password);
+      } catch {
+        throw ApiErrors.validation([
+          {
+            field: 'body.password',
+            code: 'INVALID_PASSWORD_LENGTH',
+            messageKey: 'error.account.invalid_password',
+            message: 'Mật khẩu không hợp lệ hoặc vượt quá độ dài cho phép.',
+          },
+        ]);
+      }
+
+      await enforcePreAuthRateLimit(
+        ctx.ip,
+        `guardian_register:${normalizedEmail}`,
+        ctx.ipPrefix,
+        'guardian_register'
+      );
+
+      if (
+        !repo.createGuardianUser ||
+        !repo.createEmailVerificationToken
+      ) {
+        throw buildUnsupportedStorageError();
+      }
+
+      const existing = await repo.findUserCredentialByEmail(normalizedEmail);
+      if (existing) {
+        throw ApiErrors.conflict(
+          'EMAIL_ALREADY_EXISTS',
+          'error.account.email_exists',
+          'Địa chỉ email này đã được đăng ký tài khoản trên hệ thống.'
+        );
+      }
+
+      const now = nowFn();
+      const passwordHash = await scryptLimiter.run(() => hashPwd(input.password));
+      const userId = generateUuidV7();
+      const rawToken = generateSessionToken();
+      const tokenHash = hashSessionToken(rawToken);
+      const tokenId = generateUuidV7();
+      const expiresAt = new Date(now.getTime() + EMAIL_VERIFY_TTL_MS);
+
+      const createdUser = await repo.withTransaction(async (tx) => {
+        const user = await repo.createGuardianUser!(
+          {
+            id: userId,
+            email: normalizedEmail,
+            displayName: normalizedDisplayName,
+            passwordHash,
+            now,
+          },
+          tx
+        );
+
+        await repo.createEmailVerificationToken!(
+          {
+            id: tokenId,
+            userId,
+            purpose: GUARDIAN_EMAIL_VERIFY_PURPOSE,
+            emailSnapshot: normalizedEmail,
+            tokenHash,
+            expiresAt,
+            createdAt: now,
+          },
+          tx
+        );
+
+        await safeAudit(
+          {
+            organizationId: null,
+            actorUserId: userId,
+            actorRole: 'guardian',
+            eventType: 'guardian.registered',
+            targetType: 'user',
+            targetId: userId,
+            ipPrefix: ctx.ipPrefix,
+            metadata: {
+              verificationState: 'pending_verification',
+              mailDeliveryConfigured: false,
+            },
+          },
+          tx
+        );
+
+        return user;
+      });
+
+      deps?.onVerificationTokenCreatedForTest?.({
+        userId: createdUser.id,
+        rawToken,
+        tokenHash,
+      });
+
+      return {
+        user: {
+          id: createdUser.id,
+          displayName: createdUser.displayName,
+          email: createdUser.email,
+          platformUsername: null,
+          platformRole: 'guardian',
+          emailVerified: false,
+        },
+        requiresEmailVerification: true,
+        mailDelivery: {
+          configured: false,
+          provider: null,
+          delivered: false,
+          verificationState: 'pending_verification',
+        },
+      };
+    },
+
+    async verifyGuardianEmail(
+      input: { token: string },
+      ctx: LoginRequestContext
+    ): Promise<{ verified: true; emailVerifiedAt: string }> {
+      const trimmedToken = input.token.trim();
+      await enforcePreAuthRateLimit(
+        ctx.ip,
+        'guardian_verify_email',
+        ctx.ipPrefix,
+        'guardian_verify_email'
+      );
+
+      if (trimmedToken.length < 8 || trimmedToken.length > 512) {
+        throw ApiErrors.validation([
+          {
+            field: 'body.token',
+            code: 'INVALID_VERIFICATION_TOKEN',
+            messageKey: 'error.auth.invalid_verification_token',
+            message: 'Mã xác minh email không hợp lệ.',
+          },
+        ]);
+      }
+
+      if (!repo.findVerificationTokenByHash || !repo.consumeVerificationTokenAndVerifyUser) {
+        throw buildUnsupportedStorageError();
+      }
+
+      const now = nowFn();
+      const tokenHash = hashSessionToken(trimmedToken);
+      const tokenRecord = await repo.findVerificationTokenByHash(tokenHash);
+
+      if (
+        !tokenRecord ||
+        tokenRecord.purpose !== GUARDIAN_EMAIL_VERIFY_PURPOSE ||
+        tokenRecord.revokedAt !== null
+      ) {
+        throw new AppError({
+          httpStatus: 400,
+          code: 'INVALID_VERIFICATION_TOKEN',
+          messageKey: 'error.auth.invalid_verification_token',
+          message: 'Mã xác minh email không hợp lệ hoặc đã bị thu hồi.',
+        });
+      }
+
+      if (tokenRecord.consumedAt !== null) {
+        throw ApiErrors.conflict(
+          'VERIFICATION_TOKEN_ALREADY_USED',
+          'error.auth.verification_token_used',
+          'Mã xác minh email này đã được sử dụng trước đó.'
+        );
+      }
+
+      if (tokenRecord.expiresAt <= now) {
+        throw new AppError({
+          httpStatus: 400,
+          code: 'VERIFICATION_TOKEN_EXPIRED',
+          messageKey: 'error.auth.verification_token_expired',
+          message: 'Mã xác minh email đã hết hạn. Vui lòng yêu cầu gửi lại mã mới.',
+        });
+      }
+
+      const user = await repo.findUserCredentialById(tokenRecord.userId);
+      if (
+        !user ||
+        user.platformRole !== 'guardian' ||
+        !isUserActiveAndUnlocked(user, now)
+      ) {
+        throw new AppError({
+          httpStatus: 400,
+          code: 'INVALID_VERIFICATION_TOKEN',
+          messageKey: 'error.auth.invalid_verification_token',
+          message: 'Tài khoản người giám hộ không khả dụng để xác minh.',
+        });
+      }
+
+      await repo.withTransaction(async (tx) => {
+        const consumed = await repo.consumeVerificationTokenAndVerifyUser!(
+          {
+            tokenId: tokenRecord.id,
+            userId: user.id,
+            now,
+          },
+          tx
+        );
+
+        if (!consumed) {
+          throw ApiErrors.conflict(
+            'VERIFICATION_TOKEN_ALREADY_USED',
+            'error.auth.verification_token_used',
+            'Mã xác minh email không còn hợp lệ hoặc đã được sử dụng.'
+          );
+        }
+
+        await safeAudit(
+          {
+            organizationId: null,
+            actorUserId: user.id,
+            actorRole: 'guardian',
+            eventType: 'guardian.email_verified',
+            targetType: 'user',
+            targetId: user.id,
+            ipPrefix: ctx.ipPrefix,
+            metadata: {
+              verificationMethod: 'email_token',
+            },
+          },
+          tx
+        );
+      });
+
+      return {
+        verified: true,
+        emailVerifiedAt: now.toISOString(),
+      };
+    },
+
+    async resendGuardianVerification(
+      principal: AuthenticatedPrincipal,
+      ctx: { ip?: string; ipPrefix: string | null }
+    ): Promise<{ mailDelivery: MailDeliveryStatus }> {
+      if (principal.platformRole !== 'guardian' || principal.sessionScope !== 'guardian') {
+        throw ApiErrors.forbidden('Chỉ tài khoản người giám hộ mới có thể yêu cầu xác minh email.');
+      }
+
+      await enforcePreAuthRateLimit(
+        ctx.ip,
+        `guardian_resend:${principal.userId}`,
+        ctx.ipPrefix,
+        'guardian_resend_verification'
+      );
+
+      if (
+        !repo.revokeActiveVerificationTokensForUser ||
+        !repo.createEmailVerificationToken
+      ) {
+        throw buildUnsupportedStorageError();
+      }
+
+      const user = await repo.findUserCredentialById(principal.userId);
+      const now = nowFn();
+      if (!user || !isUserActiveAndUnlocked(user, now) || !user.email) {
+        throw ApiErrors.unauthorized();
+      }
+
+      if (user.emailVerifiedAt !== null && user.emailVerifiedAt !== undefined) {
+        throw ApiErrors.conflict(
+          'EMAIL_ALREADY_VERIFIED',
+          'error.auth.email_already_verified',
+          'Địa chỉ email người giám hộ đã được xác minh.'
+        );
+      }
+
+      const rawToken = generateSessionToken();
+      const tokenHash = hashSessionToken(rawToken);
+      const tokenId = generateUuidV7();
+      const expiresAt = new Date(now.getTime() + EMAIL_VERIFY_TTL_MS);
+
+      await repo.withTransaction(async (tx) => {
+        await repo.revokeActiveVerificationTokensForUser!(
+          user.id,
+          GUARDIAN_EMAIL_VERIFY_PURPOSE,
+          now,
+          tx
+        );
+
+        await repo.createEmailVerificationToken!(
+          {
+            id: tokenId,
+            userId: user.id,
+            purpose: GUARDIAN_EMAIL_VERIFY_PURPOSE,
+            emailSnapshot: user.email!,
+            tokenHash,
+            expiresAt,
+            createdAt: now,
+          },
+          tx
+        );
+
+        await safeAudit(
+          {
+            organizationId: null,
+            actorUserId: user.id,
+            actorRole: 'guardian',
+            eventType: 'guardian.verification_requested',
+            targetType: 'user',
+            targetId: user.id,
+            ipPrefix: ctx.ipPrefix,
+            metadata: {
+              mailDeliveryConfigured: false,
+            },
+          },
+          tx
+        );
+      });
+
+      deps?.onVerificationTokenCreatedForTest?.({
+        userId: user.id,
+        rawToken,
+        tokenHash,
+      });
+
+      return {
+        mailDelivery: {
+          configured: false,
+          provider: null,
+          delivered: false,
+          verificationState: 'pending_verification',
+        },
+      };
+    },
 
     async login(
       input: LoginInput,
@@ -323,7 +759,7 @@ export function createAuthService(deps?: AuthServiceDeps) {
           throw invalidCredentialsError();
         }
 
-        // Reject unsupported platform roles (strictly 'platform_admin' | null)
+        // Reject unsupported platform roles including 'guardian' on school/admin login
         if (user.platformRole !== null && user.platformRole !== 'platform_admin') {
           await recordFailedAttemptAuditAndState(
             user,
@@ -431,6 +867,7 @@ export function createAuthService(deps?: AuthServiceDeps) {
               platformUsername: user.platformUsername,
               platformRole:
                 user.platformRole === 'platform_admin' ? 'platform_admin' : null,
+              emailVerified: Boolean(user.emailVerifiedAt),
             },
             session: {
               id: sessionId,
@@ -443,12 +880,129 @@ export function createAuthService(deps?: AuthServiceDeps) {
             organizations: orgChoices,
             requiresOrganizationSelection:
               sessionScope === 'teacher' && activeOrg === null,
+            requiresEmailVerification: false,
             csrfToken,
           },
         };
       }
 
-      // Mode 2: Email-less Student login (Org Code UPPERCASE + orgUsername lowercase + Password)
+      if (input.mode === 'guardian') {
+        const normalizedEmail = input.email.trim().toLowerCase();
+
+        await enforcePreAuthRateLimit(
+          ctx.ip,
+          `guardian:${normalizedEmail}`,
+          ctx.ipPrefix
+        );
+
+        const user = await repo.findUserCredentialByEmail(normalizedEmail);
+        const candidateHash = user?.passwordHash ?? DUMMY_SCRYPT_HASH;
+        const passwordValid = await scryptLimiter.run(() =>
+          verifyPwd(input.password, candidateHash)
+        );
+
+        if (!user || !passwordValid) {
+          await recordFailedAttemptAuditAndState(
+            user,
+            'guardian',
+            user ? 'invalid_password' : 'account_not_found',
+            ctx
+          );
+          throw invalidCredentialsError();
+        }
+
+        if (!isUserActiveAndUnlocked(user, now) || user.platformRole !== 'guardian') {
+          await recordFailedAttemptAuditAndState(
+            user,
+            'guardian',
+            user.platformRole !== 'guardian'
+              ? 'not_guardian_account'
+              : 'account_inactive_or_locked',
+            ctx
+          );
+          throw invalidCredentialsError();
+        }
+
+        const rawToken = generateSessionToken();
+        const tokenHash = hashSessionToken(rawToken);
+        const sessionId = generateUuidV7();
+        const { idleExpiresAt, absoluteExpiresAt } = computeInitialSessionExpirations(
+          'guardian',
+          now
+        );
+
+        await repo.withTransaction(async (tx) => {
+          await repo.recordSuccessfulLoginState(user.id, now, tx);
+          await repo.createSession(
+            {
+              id: sessionId,
+              tokenHash,
+              userId: user.id,
+              sessionScope: 'guardian',
+              activeOrganizationId: null,
+              idleExpiresAt,
+              absoluteExpiresAt,
+              lastActivityAt: now,
+              ipPrefix: ctx.ipPrefix,
+              userAgentHash: ctx.userAgentHash,
+              createdAt: now,
+            },
+            tx
+          );
+          await safeAudit(
+            {
+              organizationId: null,
+              actorUserId: user.id,
+              actorRole: 'guardian',
+              eventType: 'auth.login_succeeded',
+              targetType: 'session',
+              targetId: sessionId,
+              ipPrefix: ctx.ipPrefix,
+              metadata: {
+                mode: 'guardian',
+                emailVerified: Boolean(user.emailVerifiedAt),
+              },
+            },
+            tx
+          );
+        });
+
+        const csrfToken = deriveSessionCsrfToken(
+          rawToken,
+          sessionId,
+          config.auth.csrfSecret
+        );
+        const emailVerified = Boolean(user.emailVerifiedAt);
+
+        return {
+          rawSessionToken: rawToken,
+          cookieMaxAgeMs: computeRemainingSessionMs(idleExpiresAt, absoluteExpiresAt, now),
+          payload: {
+            user: {
+              id: user.id,
+              displayName: user.displayName,
+              email: user.email,
+              platformUsername: user.platformUsername,
+              platformRole: 'guardian',
+              emailVerified,
+            },
+            session: {
+              id: sessionId,
+              scope: 'guardian',
+              activeOrganizationId: null,
+              idleExpiresAt: idleExpiresAt.toISOString(),
+              absoluteExpiresAt: absoluteExpiresAt.toISOString(),
+            },
+            activeOrganization: null,
+            organizations: [],
+            requiresOrganizationSelection: false,
+            requiresEmailVerification: !emailVerified,
+            csrfToken,
+          },
+        };
+      }
+
+      // Mode 3: Email-less Student login (School Code OR Family Workspace Code + username + Password)
       const normalizedOrgCode = input.organizationCode.trim().toUpperCase();
       const normalizedOrgUsername = input.orgUsername.trim().toLowerCase();
 
@@ -473,48 +1027,166 @@ export function createAuthService(deps?: AuthServiceDeps) {
         normalizedOrgCode,
         normalizedOrgUsername
       );
-      const candidateHash = studentMatch?.user.passwordHash ?? DUMMY_SCRYPT_HASH;
+
+      if (studentMatch) {
+        const passwordValid = await scryptLimiter.run(() =>
+          verifyPwd(input.password, studentMatch.user.passwordHash)
+        );
+
+        if (!passwordValid) {
+          await recordFailedAttemptAuditAndState(
+            studentMatch.user,
+            'student',
+            'invalid_password',
+            ctx,
+            studentMatch.membership.organizationId
+          );
+          throw invalidCredentialsError();
+        }
+
+        const { user, membership } = studentMatch;
+        const eligible =
+          isUserActiveAndUnlocked(user, now) &&
+          user.platformRole === null &&
+          membership.role === 'student' &&
+          membership.membershipStatus === 'active' &&
+          membership.organizationStatus === 'active';
+
+        if (!eligible) {
+          await recordFailedAttemptAuditAndState(
+            user,
+            'student',
+            'ineligible_student_or_org_status',
+            ctx,
+            membership.organizationId
+          );
+          throw invalidCredentialsError();
+        }
+
+        const activeOrg: SafeOrganizationChoice = {
+          organizationId: membership.organizationId,
+          code: membership.organizationCode,
+          name: membership.organizationName,
+          membershipId: membership.membershipId,
+          role: 'student',
+        };
+
+        const rawToken = generateSessionToken();
+        const tokenHash = hashSessionToken(rawToken);
+        const sessionId = generateUuidV7();
+        const { idleExpiresAt, absoluteExpiresAt } = computeInitialSessionExpirations(
+          'student',
+          now
+        );
+
+        await repo.withTransaction(async (tx) => {
+          await repo.recordSuccessfulLoginState(user.id, now, tx);
+          await repo.createSession(
+            {
+              id: sessionId,
+              tokenHash,
+              userId: user.id,
+              sessionScope: 'student',
+              activeOrganizationId: membership.organizationId,
+              idleExpiresAt,
+              absoluteExpiresAt,
+              lastActivityAt: now,
+              ipPrefix: ctx.ipPrefix,
+              userAgentHash: ctx.userAgentHash,
+              createdAt: now,
+            },
+            tx
+          );
+          await safeAudit(
+            {
+              organizationId: membership.organizationId,
+              actorUserId: user.id,
+              actorRole: 'student',
+              eventType: 'auth.login_succeeded',
+              targetType: 'session',
+              targetId: sessionId,
+              ipPrefix: ctx.ipPrefix,
+              metadata: { mode: 'student', context: 'school' },
+            },
+            tx
+          );
+        });
+
+        const csrfToken = deriveSessionCsrfToken(
+          rawToken,
+          sessionId,
+          config.auth.csrfSecret
+        );
+
+        return {
+          rawSessionToken: rawToken,
+          cookieMaxAgeMs: computeRemainingSessionMs(idleExpiresAt, absoluteExpiresAt, now),
+          payload: {
+            user: {
+              id: user.id,
+              displayName: user.displayName,
+              email: user.email,
+              platformUsername: user.platformUsername,
+              platformRole: null,
+              emailVerified: false,
+            },
+            session: {
+              id: sessionId,
+              scope: 'student',
+              activeOrganizationId: membership.organizationId,
+              idleExpiresAt: idleExpiresAt.toISOString(),
+              absoluteExpiresAt: absoluteExpiresAt.toISOString(),
+            },
+            activeOrganization: activeOrg,
+            organizations: [activeOrg],
+            requiresOrganizationSelection: false,
+            requiresEmailVerification: false,
+            csrfToken,
+          },
+        };
+      }
+
+      // Fallback: check Family Workspace Student credentials (Family Code + familyUsername)
+      const familyMatch = repo.findFamilyStudentLoginRecord
+        ? await repo.findFamilyStudentLoginRecord(
+            normalizedOrgCode,
+            normalizedOrgUsername
+          )
+        : null;
+
+      const candidateHash = familyMatch?.user.passwordHash ?? DUMMY_SCRYPT_HASH;
       const passwordValid = await scryptLimiter.run(() =>
         verifyPwd(input.password, candidateHash)
       );
 
-      if (!studentMatch || !passwordValid) {
+      if (!familyMatch || !passwordValid) {
         await recordFailedAttemptAuditAndState(
-          studentMatch?.user ?? null,
+          familyMatch?.user ?? null,
           'student',
-          studentMatch ? 'invalid_password' : 'account_not_found',
+          familyMatch ? 'invalid_password' : 'account_not_found',
           ctx,
-          studentMatch?.membership.organizationId ?? null
+          null
         );
         throw invalidCredentialsError();
       }
 
-      const { user, membership } = studentMatch;
-      const eligible =
-        isUserActiveAndUnlocked(user, now) &&
-        user.platformRole === null &&
-        membership.role === 'student' &&
-        membership.membershipStatus === 'active' &&
-        membership.organizationStatus === 'active';
+      const familyEligible =
+        isUserActiveAndUnlocked(familyMatch.user, now) &&
+        familyMatch.user.platformRole === null &&
+        familyMatch.familyWorkspace.status === 'active' &&
+        familyMatch.familyStudent.status === 'active' &&
+        familyMatch.hasActiveGuardianLink;
 
-      if (!eligible) {
+      if (!familyEligible) {
         await recordFailedAttemptAuditAndState(
-          user,
+          familyMatch.user,
           'student',
-          'ineligible_student_or_org_status',
+          'ineligible_family_student',
           ctx,
-          membership.organizationId
+          null
         );
         throw invalidCredentialsError();
       }
-
-      const activeOrg: SafeOrganizationChoice = {
-        organizationId: membership.organizationId,
-        code: membership.organizationCode,
-        name: membership.organizationName,
-        membershipId: membership.membershipId,
-        role: 'student',
-      };
 
       const rawToken = generateSessionToken();
       const tokenHash = hashSessionToken(rawToken);
@@ -525,14 +1197,14 @@ export function createAuthService(deps?: AuthServiceDeps) {
       );
 
       await repo.withTransaction(async (tx) => {
-        await repo.recordSuccessfulLoginState(user.id, now, tx);
+        await repo.recordSuccessfulLoginState(familyMatch.user.id, now, tx);
         await repo.createSession(
           {
             id: sessionId,
             tokenHash,
-            userId: user.id,
+            userId: familyMatch.user.id,
             sessionScope: 'student',
-            activeOrganizationId: membership.organizationId,
+            activeOrganizationId: null,
             idleExpiresAt,
             absoluteExpiresAt,
             lastActivityAt: now,
@@ -544,14 +1216,18 @@ export function createAuthService(deps?: AuthServiceDeps) {
         );
         await safeAudit(
           {
-            organizationId: membership.organizationId,
-            actorUserId: user.id,
+            organizationId: null,
+            actorUserId: familyMatch.user.id,
             actorRole: 'student',
             eventType: 'auth.login_succeeded',
             targetType: 'session',
             targetId: sessionId,
             ipPrefix: ctx.ipPrefix,
-            metadata: { mode: 'student' },
+            metadata: {
+              mode: 'student',
+              context: 'family_workspace',
+              familyWorkspaceId: familyMatch.familyWorkspace.id,
+            },
           },
           tx
         );
@@ -568,22 +1244,24 @@ export function createAuthService(deps?: AuthServiceDeps) {
         cookieMaxAgeMs: computeRemainingSessionMs(idleExpiresAt, absoluteExpiresAt, now),
         payload: {
           user: {
-            id: user.id,
-            displayName: user.displayName,
-            email: user.email,
-            platformUsername: user.platformUsername,
+            id: familyMatch.user.id,
+            displayName: familyMatch.user.displayName,
+            email: familyMatch.user.email,
+            platformUsername: familyMatch.user.platformUsername,
             platformRole: null,
+            emailVerified: false,
           },
           session: {
             id: sessionId,
             scope: 'student',
-            activeOrganizationId: membership.organizationId,
+            activeOrganizationId: null,
             idleExpiresAt: idleExpiresAt.toISOString(),
             absoluteExpiresAt: absoluteExpiresAt.toISOString(),
           },
-          activeOrganization: activeOrg,
-          organizations: [activeOrg],
+          activeOrganization: null,
+          organizations: [],
           requiresOrganizationSelection: false,
+          requiresEmailVerification: false,
           csrfToken,
         },
       };
@@ -623,6 +1301,9 @@ export function createAuthService(deps?: AuthServiceDeps) {
         }
       }
 
+      const isGuardian = principal.platformRole === 'guardian';
+      const emailVerified = Boolean(principal.emailVerified);
+
       return {
         user: {
           id: principal.userId,
@@ -630,6 +1311,7 @@ export function createAuthService(deps?: AuthServiceDeps) {
           email: principal.email,
           platformUsername: principal.platformUsername,
           platformRole: principal.platformRole,
+          emailVerified,
         },
         session: {
           id: principal.sessionId,
@@ -643,6 +1325,7 @@ export function createAuthService(deps?: AuthServiceDeps) {
         requiresOrganizationSelection:
           principal.sessionScope === 'teacher' &&
           principal.activeOrganizationId === null,
+        requiresEmailVerification: isGuardian && !emailVerified,
         csrfToken: deriveSessionCsrfToken(
           rawSessionToken,
           principal.sessionId,
@@ -656,11 +1339,7 @@ export function createAuthService(deps?: AuthServiceDeps) {
       ctx: { ipPrefix: string | null }
     ): Promise<void> {
       const now = nowFn();
-      const actorRole: AuditActorRole =
-        principal.platformRole === 'platform_admin'
-          ? 'platform_admin'
-          : (principal.organizationRole ??
-            (principal.sessionScope === 'teacher' ? 'teacher' : 'student'));
+      const actorRole = resolveAuditActorRole(principal);
 
       await repo.withTransaction(async (tx) => {
         await repo.revokeSessionById(principal.sessionId, 'user_logout', now, tx);
@@ -690,8 +1369,7 @@ export function createAuthService(deps?: AuthServiceDeps) {
         await safeAudit({
           organizationId: principal.activeOrganizationId,
           actorUserId: principal.userId,
-          actorRole:
-            principal.platformRole === 'platform_admin' ? 'platform_admin' : 'student',
+          actorRole: resolveAuditActorRole(principal),
           eventType: 'security.unauthorized_access_denied',
           targetType: 'organization',
           targetId: targetOrganizationId,
@@ -811,6 +1489,7 @@ export function createAuthService(deps?: AuthServiceDeps) {
             email: principal.email,
             platformUsername: principal.platformUsername,
             platformRole: null,
+            emailVerified: false,
           },
           session: {
             id: principal.sessionId,
@@ -822,6 +1501,7 @@ export function createAuthService(deps?: AuthServiceDeps) {
           activeOrganization: targetOrg,
           organizations: eligibleChoices,
           requiresOrganizationSelection: false,
+          requiresEmailVerification: false,
           csrfToken,
         },
       };
@@ -877,11 +1557,7 @@ export function createAuthService(deps?: AuthServiceDeps) {
         now
       );
 
-      const actorRole: AuditActorRole =
-        principal.platformRole === 'platform_admin'
-          ? 'platform_admin'
-          : (principal.organizationRole ??
-            (principal.sessionScope === 'teacher' ? 'teacher' : 'student'));
+      const actorRole = resolveAuditActorRole(principal);
 
       await repo.withTransaction(async (tx) => {
         await repo.updateUserPasswordHash(principal.userId, newPasswordHash, now, tx);

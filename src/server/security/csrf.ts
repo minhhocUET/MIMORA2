@@ -85,6 +85,13 @@ export function buildTrustedOrigins(
       if (rawHostHeader === `127.0.0.1:${config.port}` || rawHostHeader === '127.0.0.1:8080') {
         trusted.add(`http://${rawHostHeader}`);
       }
+    } else if (
+      trusted.size === 0 &&
+      rawHostHeader &&
+      /^[a-z0-9.-]+(:\d{1,5})?$/i.test(rawHostHeader)
+    ) {
+      trusted.add(`https://${rawHostHeader}`);
+      trusted.add(`http://${rawHostHeader}`);
     }
   }
 
@@ -138,7 +145,9 @@ async function emitCsrfRejectedAudit(
         actorRole:
           req.auth?.platformRole === 'platform_admin'
             ? 'platform_admin'
-            : (req.auth?.organizationRole ?? null),
+            : req.auth?.platformRole === 'guardian'
+              ? 'guardian'
+              : (req.auth?.organizationRole ?? null),
         eventType: 'security.csrf_rejected',
         targetType: 'http_request',
         ipPrefix: extractSafeIpPrefix(req.ip),

@@ -12,16 +12,33 @@ export const enMessages = {
     platform_admin: 'Platform Admin',
     teacher: 'Teacher',
     student: 'Student',
+    guardian: 'Guardian / Parent',
   },
   auth: {
     pageTitle: 'Sign in to MIMORA',
     pageSubtitle: 'A calm, inclusive social-emotional learning space tailored to every learner.',
     modeAdminTeacher: 'Admin / Teacher',
     modeStudent: 'Student',
+    modeGuardian: 'Guardian',
     identifierLabel: 'Email or username',
     identifierPlaceholder: 'name@school.edu.vn or username',
-    orgCodeLabel: 'School code',
-    orgCodePlaceholder: 'Example: MIMORA01',
+    guardianEmailLabel: 'Guardian email',
+    guardianEmailPlaceholder: 'guardian@example.com',
+    guardianDisplayNameLabel: 'Guardian full name',
+    guardianDisplayNamePlaceholder: 'Example: Nguyen Lan Anh',
+    guardianRegisterToggle: 'Register a Guardian account',
+    guardianBackToLogin: 'Back to sign in',
+    guardianRegisterSubmit: 'Create guardian account',
+    guardianRegisterSubmitting: 'Creating account...',
+    guardianVerifyTitle: 'Verify guardian email',
+    guardianVerifyNotice:
+      'Your account is pending email verification. No outbound email provider is currently configured, so a verification email could not be sent automatically.',
+    guardianVerifyTokenLabel: 'Email verification token',
+    guardianVerifyTokenPlaceholder: 'Enter verification token',
+    guardianVerifySubmit: 'Verify email',
+    guardianVerifySuccess: 'Email verified successfully. You can now sign in to your family workspace.',
+    orgCodeLabel: 'School or Family code',
+    orgCodePlaceholder: 'Example: MIMORA01 or FAM-XXXXXX',
     orgUsernameLabel: 'Student username',
     orgUsernamePlaceholder: 'Example: minh.an',
     passwordLabel: 'Password',
@@ -30,7 +47,10 @@ export const enMessages = {
     hidePassword: 'Hide password',
     submitLogin: 'Sign in',
     submittingLogin: 'Signing in...',
-    studentNoEmailHint: 'Students do not need a personal email. Use the school code and username provided by your teacher.',
+    studentNoEmailHint:
+      'Students do not need a personal email. Use the school code (or family code FAM-...) and username provided to you.',
+    guardianLoginHint:
+      'Sign in with your guardian email — no school organization code is required.',
     validationRequired: 'Please complete all required fields.',
     logout: 'Sign out',
     loggingOut: 'Signing out...',
@@ -62,6 +82,16 @@ export const enMessages = {
     CSRF_TOKEN_INVALID: 'Security session token is invalid. Please reload or sign in again.',
     SERVICE_UNAVAILABLE_PROXY: 'Service temporarily unavailable. Please try again shortly.',
     NETWORK_ERROR: 'Unable to reach MIMORA server. Check your connection.',
+    GUARDIAN_EMAIL_VERIFICATION_REQUIRED:
+      'Guardian email verification is required before managing family workspaces and student links.',
+    EMAIL_VERIFICATION_INVALID_OR_EXPIRED:
+      'Verification token is invalid, already used, or expired.',
+    INVITATION_INVALID_OR_EXPIRED:
+      'Invitation code is invalid, already used, revoked, or expired.',
+    FAMILY_USERNAME_TAKEN:
+      'This username is already taken inside the family workspace.',
+    GUARDIAN_LINK_ALREADY_EXISTS:
+      'This student is already linked to your account in this family workspace.',
     VALIDATION_ERROR: 'Submitted fields are invalid. Please review and try again.',
     UNKNOWN: 'An unexpected error occurred. Please try again.',
   },
@@ -74,6 +104,7 @@ export const enMessages = {
     navCsvImport: 'CSV Student Import',
     navUsersClasses: 'Users & Classes',
     navContent: 'SEL Content Library',
+    navFamilyPrograms: 'Family Programs',
     navApprovalQueue: 'Approval Queue',
     navInsights: 'Aggregate Insights (k=5)',
     welcomeTitle: 'MIMORA Platform Operations',
@@ -116,5 +147,28 @@ export const enMessages = {
     aacReadAloudPathLabel: 'AAC support & Read-Aloud controls are ready inside every learning activity.',
     previewSectionTitle: 'Visual Card Component Samples (Illustrative Reference)',
     previewDisclaimer: 'Illustrative UI samples for reference only—not live backend assignment records.',
+    familySpaceLabel: 'Family Space',
+    familyProgramsHeading: 'Your Family Programs',
+    familyProgramsEmptyTitle: 'No family programs activated yet',
+    familyProgramsEmptyBody:
+      'When a guardian or admin activates a home learning program for you, it will appear right here.',
+    familySpaceEmptyTitle: 'Your Family Learning Space is ready',
+    familySpaceEmptyBody:
+      'You are currently signed in through your Family Workspace without school class enrollments. Any school assignments will appear here once linked to a class.',
+    statusNotStarted: 'Not started',
+    statusInProgress: 'In progress',
+    statusCompleted: 'Completed',
+  },
+  guardian: {
+    portalName: 'Guardian & Family Portal',
+    navWorkspaces: 'Family Workspaces',
+    navStudents: 'Linked Students',
+    navProgress: 'Learning Progress',
+    navSettings: 'Account & Verification',
+    privacyNote:
+      'Child privacy boundary: Guardians see only safe account and completion status — never individual answers, AAC logs, or private teacher notes.',
+    verificationPendingTitle: 'Email verification required before managing family',
+    verificationPendingBody:
+      'For child safety, guardians can create Family Workspaces or link student profiles only after their email address is verified.',
   },
 } as const;

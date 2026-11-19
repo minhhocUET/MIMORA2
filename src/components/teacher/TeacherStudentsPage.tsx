@@ -1,4 +1,4 @@
-import { Archive, Lock, Pencil, Plus, Save, Target, Trash2, UserCheck } from 'lucide-react';
+import { Archive, Link2, Lock, Pencil, Plus, Save, Target, Trash2, UserCheck } from 'lucide-react';
 import { useCallback, useEffect, useState, type FormEvent } from 'react';
 import { ApiClientError } from '../../api/client.ts';
 import { teacherApi } from '../../api/teacher.ts';
@@ -14,6 +14,7 @@ import type {
   SupportVisualContrast,
 } from '../../types/teacher.ts';
 import { formatDateOnly, formatDateTime, getGoalStatusMeta } from '../../utils/p302.ts';
+import { GuardianInviteDialog } from '../shared/GuardianInviteDialog.tsx';
 import {
   Alert,
   Badge,
@@ -97,6 +98,7 @@ export function TeacherStudentsPage({
   const [savingObs, setSavingObs] = useState(false);
   const [obsFormErr, setObsFormErr] = useState<string | null>(null);
   const [confirmDeleteObs, setConfirmDeleteObs] = useState<SafeTeacherObservationView | null>(null);
+  const [guardianInviteOpen, setGuardianInviteOpen] = useState(false);
 
   useEffect(() => {
     if (initialStudentMembershipId) {
@@ -462,16 +464,27 @@ export function TeacherStudentsPage({
                       @{activeStudent.orgUsername ?? '—'} · Lớp {activeStudent.className}
                     </p>
                   </div>
-                  <Tabs
-                    ariaLabel="Hồ sơ chi tiết học sinh"
-                    value={detailTab}
-                    onChange={setDetailTab}
-                    options={[
-                      { value: 'profile', label: 'Hồ sơ hỗ trợ', icon: <UserCheck className="h-4 w-4" aria-hidden="true" /> },
-                      { value: 'goals', label: 'Mục tiêu SEL', icon: <Target className="h-4 w-4" aria-hidden="true" /> },
-                      { value: 'observations', label: 'Ghi chú riêng tư', icon: <Lock className="h-4 w-4" aria-hidden="true" /> },
-                    ]}
-                  />
+                  <div className="flex flex-wrap items-center gap-2">
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      onClick={() => setGuardianInviteOpen(true)}
+                      leftIcon={<Link2 className="h-3.5 w-3.5" aria-hidden="true" />}
+                    >
+                      Mã liên kết phụ huynh
+                    </Button>
+                    <Tabs
+                      ariaLabel="Hồ sơ chi tiết học sinh"
+                      value={detailTab}
+                      onChange={setDetailTab}
+                      options={[
+                        { value: 'profile', label: 'Hồ sơ hỗ trợ', icon: <UserCheck className="h-4 w-4" aria-hidden="true" /> },
+                        { value: 'goals', label: 'Mục tiêu SEL', icon: <Target className="h-4 w-4" aria-hidden="true" /> },
+                        { value: 'observations', label: 'Ghi chú riêng tư', icon: <Lock className="h-4 w-4" aria-hidden="true" /> },
+                      ]}
+                    />
+                  </div>
                 </div>
               </Card>
 
@@ -964,6 +977,15 @@ export function TeacherStudentsPage({
           Ghi chú này sẽ được ẩn khỏi danh sách quan sát riêng tư của bạn.
         </p>
       </Dialog>
+      <GuardianInviteDialog
+        open={guardianInviteOpen && Boolean(activeStudent)}
+        onClose={() => setGuardianInviteOpen(false)}
+        locale={locale}
+        mode="teacher"
+        studentMembershipId={activeStudent?.studentMembershipId ?? null}
+        studentDisplayName={activeStudent?.displayName ?? ''}
+        onToast={onToast}
+      />
     </div>
   );
 }

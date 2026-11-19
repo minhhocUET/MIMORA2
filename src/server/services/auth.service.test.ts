@@ -5,6 +5,7 @@ import test from 'node:test';
 import { parseServerConfig, type ServerConfig } from '../config/env.ts';
 import { apiErrorHandler, apiNotFoundHandler } from '../http/middleware.ts';
 import { createAuthMiddlewareSuite } from '../middleware/auth.ts';
+import type { SessionScope } from '../db/schema/_shared.ts';
 import type {
   AuthCredentialUserRecord,
   AuthMembershipSummary,
@@ -43,7 +44,7 @@ interface InMemoryAuthStore {
       id: string;
       tokenHash: string;
       userId: string;
-      sessionScope: 'platform_admin' | 'teacher' | 'student';
+      sessionScope: SessionScope;
       activeOrganizationId: string | null;
       idleExpiresAt: Date;
       absoluteExpiresAt: Date;

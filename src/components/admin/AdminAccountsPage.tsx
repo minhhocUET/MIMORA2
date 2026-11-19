@@ -1,4 +1,4 @@
-import { KeyRound, Plus, Search, UserCheck, UserPlus } from 'lucide-react';
+import { KeyRound, Link2, Plus, Search, UserCheck, UserPlus } from 'lucide-react';
 import { useCallback, useEffect, useState, type FormEvent } from 'react';
 import { adminApi } from '../../api/admin.ts';
 import { ApiClientError } from '../../api/client.ts';
@@ -17,6 +17,7 @@ import {
   getAccountStatusMeta,
   getMembershipStatusMeta,
 } from '../../utils/p302.ts';
+import { GuardianInviteDialog } from '../shared/GuardianInviteDialog.tsx';
 import {
   Alert,
   Badge,
@@ -43,6 +44,7 @@ export interface AdminAccountsPageProps {
 export function AdminAccountsPage({ locale, onToast }: AdminAccountsPageProps) {
   const [tab, setTab] = useState<'users' | 'memberships'>('users');
   const [orgs, setOrgs] = useState<SafeOrganizationView[]>([]);
+  const [inviteMem, setInviteMem] = useState<SafeMembershipView | null>(null);
   const [orgsError, setOrgsError] = useState<string | null>(null);
 
   // Users tab state
@@ -760,20 +762,33 @@ export function AdminAccountsPage({ locale, onToast }: AdminAccountsPageProps) {
                               <Badge variant={st.variant}>{st.label}</Badge>
                             </td>
                             <td className="py-2.5 px-3 text-right">
-                              <Button
-                                variant="outline"
-                                size="sm"
-                                disabled={m.status === 'transferred'}
-                                onClick={() => {
-                                  setEditingMem(m);
-                                  setEditMemUsername(m.orgUsername ?? '');
-                                  setEditMemStatus(m.status === 'disabled' ? 'disabled' : 'active');
-                                  setEditMemErr(null);
-                                  setEditMemOpen(true);
-                                }}
-                              >
-                                Chỉnh sửa
-                              </Button>
+                              <div className="inline-flex flex-wrap items-center justify-end gap-2">
+                                {m.role === 'student' && (
+                                  <Button
+                                    variant="outline"
+                                    size="sm"
+                                    disabled={m.status !== 'active'}
+                                    leftIcon={<Link2 className="h-3.5 w-3.5" aria-hidden="true" />}
+                                    onClick={() => setInviteMem(m)}
+                                  >
+                                    Liên kết phụ huynh
+                                  </Button>
+                                )}
+                                <Button
+                                  variant="outline"
+                                  size="sm"
+                                  disabled={m.status === 'transferred'}
+                                  onClick={() => {
+                                    setEditingMem(m);
+                                    setEditMemUsername(m.orgUsername ?? '');
+                                    setEditMemStatus(m.status === 'disabled' ? 'disabled' : 'active');
+                                    setEditMemErr(null);
+                                    setEditMemOpen(true);
+                                  }}
+                                >
+                                  Chỉnh sửa
+                                </Button>
+                              </div>
                             </td>
                           </tr>
                         );
@@ -792,7 +807,7 @@ export function AdminAccountsPage({ locale, onToast }: AdminAccountsPageProps) {
         open={createUserOpen}
         onClose={() => setCreateUserOpen(false)}
         title="Cấp tài khoản Giáo viên hoặc Học sinh"
-        description="Hệ thống chỉ tạo tài khoản theo đúng vai trò chuẩn hóa của MIMORA (không có org_admin hay tài khoản phụ huynh)."
+        description="Hệ thống chỉ tạo tài khoản trường học cho giáo viên/học sinh (không có org_admin; tài khoản người giám hộ tự đăng ký riêng)."
       >
         <form onSubmit={(e) => void handleCreateUser(e)} className="space-y-4">
           {createUserErr && <Alert variant="danger">{createUserErr}</Alert>}
@@ -1063,6 +1078,16 @@ export function AdminAccountsPage({ locale, onToast }: AdminAccountsPageProps) {
           </div>
         </form>
       </Dialog>
+      <GuardianInviteDialog
+        open={Boolean(inviteMem)}
+        onClose={() => setInviteMem(null)}
+        locale={locale}
+        mode="admin"
+        organizationId={selectedMembershipOrgId}
+        studentMembershipId={inviteMem?.id ?? null}
+        studentDisplayName={inviteMem?.user?.displayName ?? inviteMem?.orgUsername ?? 'Học sinh'}
+        onToast={onToast}
+      />
     </div>
   );
 }

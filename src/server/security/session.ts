@@ -22,6 +22,10 @@ export const SESSION_TIMEOUT_POLICIES: Readonly<Record<SessionScope, SessionTime
       idleTimeoutMs: 4 * 60 * 60 * 1000, // 4 hours
       absoluteTimeoutMs: 12 * 60 * 60 * 1000, // 12 hours
     },
+    guardian: {
+      idleTimeoutMs: 2 * 60 * 60 * 1000, // 2 hours
+      absoluteTimeoutMs: 12 * 60 * 60 * 1000, // 12 hours
+    },
   });
 
 const SESSION_TOKEN_BYTES = 32;

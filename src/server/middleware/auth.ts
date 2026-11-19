@@ -18,7 +18,7 @@ import {
 import { recordAuditEvent, type AuditInsertExecutor } from '../services/audit.service.ts';
 import type { AuthenticatedPrincipal } from '../services/auth.service.ts';
 
-export type MvpRole = 'platform_admin' | OrgRole;
+export type MvpRole = 'platform_admin' | OrgRole | 'guardian';
 
 declare global {
   namespace Express {
@@ -50,7 +50,11 @@ function resolveValidatedPrincipal(
     return null;
   }
 
-  if (user.platformRole !== null && user.platformRole !== 'platform_admin') {
+  if (
+    user.platformRole !== null &&
+    user.platformRole !== 'platform_admin' &&
+    user.platformRole !== 'guardian'
+  ) {
     return null;
   }
 
@@ -61,6 +65,8 @@ function resolveValidatedPrincipal(
     return {
       userId: user.id,
       platformRole: 'platform_admin',
+      emailVerified: Boolean(user.emailVerifiedAt),
+      hasFamilyContext: false,
       activeOrganizationId: null,
       organizationMembershipId: null,
       organizationRole: null,
@@ -72,7 +78,27 @@ function resolveValidatedPrincipal(
     };
   }
 
-  // Teacher or Student must NOT have a platform_admin role
+  if (session.sessionScope === 'guardian') {
+    if (user.platformRole !== 'guardian' || session.activeOrganizationId !== null) {
+      return null;
+    }
+    return {
+      userId: user.id,
+      platformRole: 'guardian',
+      emailVerified: Boolean(user.emailVerifiedAt),
+      hasFamilyContext: false,
+      activeOrganizationId: null,
+      organizationMembershipId: null,
+      organizationRole: null,
+      sessionId: session.id,
+      sessionScope: 'guardian',
+      displayName: user.displayName,
+      email: user.email,
+      platformUsername: user.platformUsername,
+    };
+  }
+
+  // Teacher or Student must NOT have a platform_admin or guardian platformRole
   if (user.platformRole !== null) {
     return null;
   }
@@ -82,6 +108,8 @@ function resolveValidatedPrincipal(
       return {
         userId: user.id,
         platformRole: null,
+        emailVerified: false,
+        hasFamilyContext: false,
         activeOrganizationId: null,
         organizationMembershipId: null,
         organizationRole: null,
@@ -106,6 +134,8 @@ function resolveValidatedPrincipal(
     return {
       userId: user.id,
       platformRole: null,
+      emailVerified: false,
+      hasFamilyContext: false,
       activeOrganizationId: activeOrganization.id,
       organizationMembershipId: activeMembership.id,
       organizationRole: 'teacher',
@@ -118,8 +148,27 @@ function resolveValidatedPrincipal(
   }
 
   if (session.sessionScope === 'student') {
+    if (session.activeOrganizationId === null) {
+      if (!record.hasActiveFamilyStudentContext) {
+        return null;
+      }
+      return {
+        userId: user.id,
+        platformRole: null,
+        emailVerified: false,
+        hasFamilyContext: true,
+        activeOrganizationId: null,
+        organizationMembershipId: null,
+        organizationRole: 'student',
+        sessionId: session.id,
+        sessionScope: 'student',
+        displayName: user.displayName,
+        email: user.email,
+        platformUsername: user.platformUsername,
+      };
+    }
+
     if (
-      session.activeOrganizationId === null ||
       !activeOrganization ||
       activeOrganization.status !== 'active' ||
       !activeMembership ||
@@ -132,6 +181,8 @@ function resolveValidatedPrincipal(
     return {
       userId: user.id,
       platformRole: null,
+      emailVerified: false,
+      hasFamilyContext: Boolean(record.hasActiveFamilyStudentContext),
       activeOrganizationId: activeOrganization.id,
       organizationMembershipId: activeMembership.id,
       organizationRole: 'student',
@@ -238,6 +289,73 @@ export function createAuthMiddlewareSuite(options?: {
     next();
   };
 
+  const requireVerifiedGuardian = async (
+    req: Request,
+    _res: Response,
+    next: NextFunction
+  ): Promise<void> => {
+    const auth = req.auth;
+    if (!auth) {
+      next(ApiErrors.unauthorized());
+      return;
+    }
+
+    if (auth.platformRole !== 'guardian' || auth.sessionScope !== 'guardian') {
+      await recordAuditEvent(
+        {
+          organizationId: auth.activeOrganizationId,
+          actorUserId: auth.userId,
+          actorRole:
+            auth.platformRole === 'platform_admin'
+              ? 'platform_admin'
+              : (auth.organizationRole ?? null),
+          eventType: 'security.unauthorized_access_denied',
+          targetType: 'http_route',
+          ipPrefix: extractSafeIpPrefix(req.ip),
+          metadata: {
+            reason: 'guardian_role_required',
+            method: req.method,
+            path: req.path,
+          },
+        },
+        options?.auditExecutor
+      ).catch(() => undefined);
+      next(ApiErrors.forbidden());
+      return;
+    }
+
+    if (!auth.emailVerified) {
+      await recordAuditEvent(
+        {
+          organizationId: null,
+          actorUserId: auth.userId,
+          actorRole: 'guardian',
+          eventType: 'security.unauthorized_access_denied',
+          targetType: 'http_route',
+          ipPrefix: extractSafeIpPrefix(req.ip),
+          metadata: {
+            reason: 'guardian_email_verification_required',
+            method: req.method,
+            path: req.path,
+          },
+        },
+        options?.auditExecutor
+      ).catch(() => undefined);
+      next(
+        new AppError({
+          httpStatus: 403,
+          code: 'GUARDIAN_EMAIL_VERIFICATION_REQUIRED',
+          messageKey: 'error.auth.guardian_email_verification_required',
+          message:
+            'Tài khoản người giám hộ cần xác minh email trước khi sử dụng không gian gia đình.',
+        })
+      );
+      return;
+    }
+
+    next();
+  };
+
   const requireRole = (...allowedRoles: MvpRole[]) => {
     const allowedSet = new Set<MvpRole>(allowedRoles);
 
@@ -251,6 +369,8 @@ export function createAuthMiddlewareSuite(options?: {
       let effectiveRole: MvpRole | null = null;
       if (auth.platformRole === 'platform_admin' && auth.sessionScope === 'platform_admin') {
         effectiveRole = 'platform_admin';
+      } else if (auth.platformRole === 'guardian' && auth.sessionScope === 'guardian') {
+        effectiveRole = 'guardian';
       } else if (
         auth.platformRole === null &&
         auth.organizationRole !== null &&
@@ -273,7 +393,9 @@ export function createAuthMiddlewareSuite(options?: {
             actorRole:
               auth.platformRole === 'platform_admin'
                 ? 'platform_admin'
-                : (auth.organizationRole ?? null),
+                : auth.platformRole === 'guardian'
+                  ? 'guardian'
+                  : (auth.organizationRole ?? null),
             eventType: 'security.unauthorized_access_denied',
             targetType: 'http_route',
             ipPrefix: extractSafeIpPrefix(req.ip),
@@ -296,6 +418,7 @@ export function createAuthMiddlewareSuite(options?: {
   return {
     requireAuth,
     requireOrgContext,
+    requireVerifiedGuardian,
     requireRole,
   };
 }
@@ -304,4 +427,5 @@ const defaultSuite = createAuthMiddlewareSuite();
 
 export const requireAuth = defaultSuite.requireAuth;
 export const requireOrgContext = defaultSuite.requireOrgContext;
+export const requireVerifiedGuardian = defaultSuite.requireVerifiedGuardian;
 export const requireRole = defaultSuite.requireRole;

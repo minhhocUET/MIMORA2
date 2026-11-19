@@ -3,7 +3,12 @@ import type {
   ApiErrorInfo,
   AuthContextPayload,
   ChangePasswordRequest,
+  GuardianRegisterRequest,
+  GuardianRegisterResponse,
   LoginRequest,
+  MailDeliveryStatus,
+  VerifyGuardianEmailRequest,
+  VerifyGuardianEmailResponse,
 } from '../types/auth.ts';
 
 const API_BASE = '/api/v1';
@@ -326,6 +331,41 @@ export const authApi = {
       passwordChanged: res.passwordChanged,
       csrfToken: res.csrfToken,
     };
+  },
+
+  async registerGuardian(
+    input: GuardianRegisterRequest,
+    fetchImpl?: typeof fetch
+  ): Promise<GuardianRegisterResponse> {
+    return apiRequest<GuardianRegisterResponse>('/auth/guardian/register', {
+      method: 'POST',
+      body: input,
+      fetchImpl,
+    });
+  },
+
+  async verifyGuardianEmail(
+    input: VerifyGuardianEmailRequest,
+    fetchImpl?: typeof fetch
+  ): Promise<VerifyGuardianEmailResponse> {
+    return apiRequest<VerifyGuardianEmailResponse>('/auth/guardian/verify-email', {
+      method: 'POST',
+      body: input,
+      fetchImpl,
+    });
+  },
+
+  async resendGuardianVerification(fetchImpl?: typeof fetch): Promise<{
+    status: 'ok';
+    alreadyVerified: boolean;
+    requiresEmailVerification: boolean;
+    mailDelivery?: MailDeliveryStatus;
+  }> {
+    return apiRequest('/auth/guardian/resend-verification', {
+      method: 'POST',
+      body: {},
+      fetchImpl,
+    });
   },
 
   async logout(fetchImpl?: typeof fetch): Promise<void> {

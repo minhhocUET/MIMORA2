@@ -51,8 +51,16 @@ export type CanonicalContentType = (typeof CANONICAL_CONTENT_TYPES)[number];
 export const ORG_ROLES = ['teacher', 'student'] as const;
 export type OrgRole = (typeof ORG_ROLES)[number];
 
-export const SESSION_SCOPES = ['platform_admin', 'teacher', 'student'] as const;
+export const SESSION_SCOPES = [
+  'platform_admin',
+  'teacher',
+  'student',
+  'guardian',
+] as const;
 export type SessionScope = (typeof SESSION_SCOPES)[number];
+
+export const PLATFORM_ROLES = ['platform_admin', 'guardian'] as const;
+export type PlatformRole = (typeof PLATFORM_ROLES)[number];
 
 export const INSIGHT_PERIOD_TYPES = ['daily', 'weekly', 'monthly'] as const;
 export type InsightPeriodType = (typeof INSIGHT_PERIOD_TYPES)[number];
@@ -90,6 +98,29 @@ export const AUDIT_EVENT_TYPES = [
   'assignment.updated',
   'assignment.closed',
   'assignment.targets_updated',
+  'guardian.registered',
+  'guardian.verification_requested',
+  'guardian.email_verified',
+  'family.workspace_created',
+  'family.co_guardian_joined',
+  'guardian.student_created',
+  'guardian.student_linked',
+  'guardian.link_revoked',
+  'guardian.invitation_created',
+  'guardian.invitation_revoked',
+  'guardian.invitation_claim_failed',
+  'family.program_created',
+  'family.program_version_created',
+  'family.program_updated',
+  'family.program_published',
+  'family.program_retired',
+  'family.program_enrolled',
+  'family.program_enrollment_revoked',
+  'family.attempt_started',
+  'family.attempt_completed',
+  'family.attempt_abandoned',
+  'student.family_preferences_updated',
+  'guardian.progress_viewed',
   'security.csrf_rejected',
   'security.rate_limit_triggered',
   'security.unauthorized_access_denied',

@@ -1,13 +1,14 @@
-export type MvpRole = 'platform_admin' | 'teacher' | 'student';
+export type MvpRole = 'platform_admin' | 'teacher' | 'student' | 'guardian';
 export type OrgRole = 'teacher' | 'student';
-export type SessionScope = 'platform_admin' | 'teacher' | 'student';
+export type SessionScope = 'platform_admin' | 'teacher' | 'student' | 'guardian';
 
 export interface SafeUserView {
   id: string;
   displayName: string;
   email: string | null;
   platformUsername: string | null;
-  platformRole: 'platform_admin' | null;
+  platformRole: 'platform_admin' | 'guardian' | null;
+  emailVerified?: boolean;
 }
 
 export interface SafeOrganizationChoice {
@@ -32,6 +33,7 @@ export interface AuthContextPayload {
   activeOrganization: SafeOrganizationChoice | null;
   organizations: SafeOrganizationChoice[];
   requiresOrganizationSelection: boolean;
+  requiresEmailVerification?: boolean;
   csrfToken: string;
 }
 
@@ -46,7 +48,43 @@ export type LoginRequest =
       organizationCode: string;
       orgUsername: string;
       password: string;
+    }
+  | {
+      mode: 'guardian';
+      email: string;
+      password: string;
     };
+
+export interface GuardianRegisterRequest {
+  displayName: string;
+  email: string;
+  password: string;
+}
+
+export interface MailDeliveryStatus {
+  configured: false;
+  provider: null;
+  delivered: false;
+  verificationState: 'pending_verification';
+}
+
+export interface GuardianRegisterResponse {
+  status: 'ok';
+  user: SafeUserView;
+  requiresEmailVerification: true;
+  mailDelivery: MailDeliveryStatus;
+}
+
+export interface VerifyGuardianEmailRequest {
+  token: string;
+}
+
+export interface VerifyGuardianEmailResponse {
+  status: 'ok';
+  verified: boolean;
+  userId: string;
+  emailVerifiedAt: string;
+}
 
 export interface ChangePasswordRequest {
   currentPassword: string;

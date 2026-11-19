@@ -5,6 +5,7 @@ import { MimoraBrandMark } from './components/illustrations/SelIllustrations.tsx
 import { LoadingState } from './components/ui/index.ts';
 import { getMessages } from './i18n/index.ts';
 import { AdminLayout } from './layouts/AdminLayout.tsx';
+import { GuardianLayout } from './layouts/GuardianLayout.tsx';
 import { StudentLayout } from './layouts/StudentLayout.tsx';
 import { TeacherLayout } from './layouts/TeacherLayout.tsx';
 
@@ -37,6 +38,10 @@ function AppRouter() {
 
   if (resolvedRole === 'platform_admin') {
     return <AdminLayout />;
+  }
+
+  if (resolvedRole === 'guardian') {
+    return <GuardianLayout />;
   }
 
   if (resolvedRole === 'teacher') {

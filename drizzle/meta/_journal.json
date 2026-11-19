@@ -8,6 +8,20 @@
       "when": 1794764487312,
       "tag": "0000_mimora_mvp_init",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "5",
+      "when": 1794937287312,
+      "tag": "0001_mimora_p4_01_guardian_family",
+      "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "5",
+      "when": 1795023687312,
+      "tag": "0002_mimora_p4_02_family_learning",
+      "breakpoints": true
     }
   ]
 }

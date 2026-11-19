@@ -1,12 +1,17 @@
 import { apiRequest } from './client.ts';
 import type {
   GoalStatus,
+  SafeFamilyStudentAttemptView,
   SafeStudentAssignmentDetailView,
   SafeStudentAssignmentListItemView,
   SafeStudentAttemptView,
+  SafeStudentFamilyPreferencesView,
+  SafeStudentFamilyProgramDetailView,
+  SafeStudentFamilyProgramSummaryView,
   SafeStudentGoalView,
   SafeStudentProfileView,
   SafeTurnView,
+  StudentSupportPreferencesJson,
 } from '../types/student.ts';
 
 function buildQuery(params: object): string {
@@ -199,6 +204,139 @@ export const studentApi = {
       };
     }>(`/student/goals${buildQuery(query)}`, {
       method: 'GET',
+      fetchImpl,
+    });
+  },
+
+  // Teacher-Free Family Learning & Canonical Student Preferences (P4-02)
+  getFamilyPreferences(fetchImpl?: typeof fetch) {
+    return apiRequest<{
+      status: 'ok';
+      preferences: SafeStudentFamilyPreferencesView;
+    }>('/student/family-preferences', {
+      method: 'GET',
+      fetchImpl,
+    });
+  },
+
+  updateFamilyPreferences(
+    body: {
+      preferredName?: string | null;
+      supportPreferencesJson?: StudentSupportPreferencesJson | null;
+    },
+    fetchImpl?: typeof fetch
+  ) {
+    return apiRequest<{
+      status: 'ok';
+      preferences: SafeStudentFamilyPreferencesView;
+    }>('/student/family-preferences', {
+      method: 'PATCH',
+      body,
+      fetchImpl,
+    });
+  },
+
+  listFamilyPrograms(fetchImpl?: typeof fetch) {
+    return apiRequest<{
+      status: 'ok';
+      programs: SafeStudentFamilyProgramSummaryView[];
+    }>('/student/family-programs', {
+      method: 'GET',
+      fetchImpl,
+    });
+  },
+
+  getFamilyProgramDetail(enrollmentId: string, fetchImpl?: typeof fetch) {
+    return apiRequest<{ status: 'ok' } & SafeStudentFamilyProgramDetailView>(
+      `/student/family-programs/${encodeURIComponent(enrollmentId)}`,
+      {
+        method: 'GET',
+        fetchImpl,
+      }
+    );
+  },
+
+  startOrResumeFamilyAttempt(
+    enrollmentId: string,
+    itemId: string,
+    body: StartOrResumeAttemptInput = {},
+    fetchImpl?: typeof fetch
+  ) {
+    const headers: Record<string, string> = {};
+    if (body.idempotencyKey && body.idempotencyKey.trim().length > 0) {
+      headers['Idempotency-Key'] = body.idempotencyKey.trim();
+    }
+
+    return apiRequest<{
+      status: 'ok';
+      action: 'started' | 'resumed' | 'retried' | 'idempotent_replay';
+      attempt: SafeFamilyStudentAttemptView;
+    }>(
+      `/student/family-programs/${encodeURIComponent(enrollmentId)}/items/${encodeURIComponent(itemId)}/start-or-resume`,
+      {
+        method: 'POST',
+        body,
+        headers,
+        fetchImpl,
+      }
+    );
+  },
+
+  getFamilyAttempt(attemptId: string, fetchImpl?: typeof fetch) {
+    return apiRequest<{
+      status: 'ok';
+      attempt: SafeFamilyStudentAttemptView;
+    }>(`/student/family-attempts/${encodeURIComponent(attemptId)}`, {
+      method: 'GET',
+      fetchImpl,
+    });
+  },
+
+  saveFamilyTurn(
+    attemptId: string,
+    body: SaveStudentTurnInput,
+    fetchImpl?: typeof fetch
+  ) {
+    return apiRequest<{
+      status: 'ok';
+      idempotentReplay: boolean;
+      savedTurn: SafeTurnView;
+      attempt: SafeFamilyStudentAttemptView;
+    }>(`/student/family-attempts/${encodeURIComponent(attemptId)}/turns`, {
+      method: 'POST',
+      body,
+      fetchImpl,
+    });
+  },
+
+  completeFamilyAttempt(
+    attemptId: string,
+    body: CompleteStudentAttemptInput = {},
+    fetchImpl?: typeof fetch
+  ) {
+    return apiRequest<{
+      status: 'ok';
+      idempotentReplay: boolean;
+      attempt: SafeFamilyStudentAttemptView;
+    }>(`/student/family-attempts/${encodeURIComponent(attemptId)}/complete`, {
+      method: 'POST',
+      body,
+      fetchImpl,
+    });
+  },
+
+  abandonFamilyAttempt(
+    attemptId: string,
+    body: AbandonStudentAttemptInput,
+    fetchImpl?: typeof fetch
+  ) {
+    return apiRequest<{
+      status: 'ok';
+      idempotentReplay: boolean;
+      attempt: SafeFamilyStudentAttemptView;
+    }>(`/student/family-attempts/${encodeURIComponent(attemptId)}/abandon`, {
+      method: 'POST',
+      body,
       fetchImpl,
     });
   },

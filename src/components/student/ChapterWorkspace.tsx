@@ -16,6 +16,7 @@ import { resolveLocalizedErrorMessage, type AppLocale } from '../../i18n/index.t
 import { PROPOSAL_V1_SESSIONS, type StepNumber } from '../../types/chapter.ts';
 import type {
   PendingTurnDraft,
+  SafeFamilyStudentAttemptView,
   SafeStudentAssignmentDetailView,
   SafeStudentAttemptView,
   StudentAccessibilityRuntime,
@@ -49,6 +50,7 @@ import { StrategyDeckStep } from './steps/StrategyDeckStep.tsx';
 
 export interface ChapterWorkspaceProps {
   assignment: SafeStudentAssignmentDetailView;
+  transport?: 'school' | 'family';
   initialItemIndex?: number;
   locale: AppLocale;
   accessibility: StudentAccessibilityRuntime;
@@ -58,12 +60,16 @@ export interface ChapterWorkspaceProps {
 
 export function ChapterWorkspace({
   assignment,
+  transport = 'school',
   initialItemIndex = 0,
   locale,
   accessibility,
   onBackToDetail,
   onAssignmentProgressMutated,
 }: ChapterWorkspaceProps) {
+  const isFamilyTransport = transport === 'family';
+  const adultHelperLabel = isFamilyTransport ? 'người lớn trong gia đình' : 'thầy cô';
+
   const items = assignment.items;
   const safeInitialIdx = Math.min(Math.max(initialItemIndex, 0), Math.max(items.length - 1, 0));
   const [activeItemIndex, setActiveItemIndex] = useState(safeInitialIdx);
@@ -78,7 +84,9 @@ export function ChapterWorkspace({
     activePlacement?.stepNumber ?? 1
   );
 
-  const [attempt, setAttempt] = useState<SafeStudentAttemptView | null>(null);
+  const [attempt, setAttempt] = useState<
+    SafeStudentAttemptView | SafeFamilyStudentAttemptView | null
+  >(null);
   const [attemptLoading, setAttemptLoading] = useState(false);
   const [attemptError, setAttemptError] = useState<string | null>(null);
   const [retryPromptRequired, setRetryPromptRequired] = useState(false);
@@ -128,15 +136,25 @@ export function ChapterWorkspace({
 
       try {
         const idemKey = `stu_${activeItem.assignmentItemId}_${intent}_${Date.now()}`;
-        const res = await studentApi.startOrResumeAttempt(
-          assignment.targetId,
-          activeItem.assignmentItemId,
-          {
-            intent,
-            expectedContentVersionId: activeItem.contentVersionId,
-            idempotencyKey: idemKey.slice(0, 64),
-          }
-        );
+        const res = isFamilyTransport
+          ? await studentApi.startOrResumeFamilyAttempt(
+              assignment.targetId,
+              activeItem.assignmentItemId,
+              {
+                intent,
+                expectedContentVersionId: activeItem.contentVersionId,
+                idempotencyKey: idemKey.slice(0, 64),
+              }
+            )
+          : await studentApi.startOrResumeAttempt(
+              assignment.targetId,
+              activeItem.assignmentItemId,
+              {
+                intent,
+                expectedContentVersionId: activeItem.contentVersionId,
+                idempotencyKey: idemKey.slice(0, 64),
+              }
+            );
         if (reqSeq !== attemptLoadSeqRef.current) {
           return;
         }
@@ -170,7 +188,14 @@ export function ChapterWorkspace({
         }
       }
     },
-    [activeItem, assignment.isReadOnly, assignment.targetId, locale, onAssignmentProgressMutated]
+    [
+      activeItem,
+      assignment.isReadOnly,
+      assignment.targetId,
+      isFamilyTransport,
+      locale,
+      onAssignmentProgressMutated,
+    ]
   );
 
   useEffect(() => {
@@ -184,7 +209,7 @@ export function ChapterWorkspace({
     return () => {
       stopSpeech();
     };
-  }, [activeItem?.assignmentItemId, assignment.targetId]);
+  }, [activeItem?.assignmentItemId, assignment.targetId, isFamilyTransport]);
 
   const submitTurnDraft = async (draft: PendingTurnDraft) => {
     if (!attempt || attempt.state !== 'in_progress' || assignment.isReadOnly || saveStatus === 'saving') {
@@ -196,7 +221,9 @@ export function ChapterWorkspace({
     setSaveError(null);
 
     try {
-      const res = await studentApi.saveTurn(attempt.attemptId, draft);
+      const res = isFamilyTransport
+        ? await studentApi.saveFamilyTurn(attempt.attemptId, draft)
+        : await studentApi.saveTurn(attempt.attemptId, draft);
       setAttempt(res.attempt);
       setPendingDraft(null);
       setPendingAacTapDelta(0);
@@ -210,7 +237,9 @@ export function ChapterWorkspace({
       setSaveStatus('error');
       if (err instanceof ApiClientError && err.info.code === 'TURN_INDEX_CONFLICT') {
         try {
-          const fresh = await studentApi.getAttempt(attempt.attemptId);
+          const fresh = isFamilyTransport
+            ? await studentApi.getFamilyAttempt(attempt.attemptId)
+            : await studentApi.getAttempt(attempt.attemptId);
           setAttempt(fresh.attempt);
           setPendingDraft(null);
           setSaveError(
@@ -283,13 +312,16 @@ export function ChapterWorkspace({
     setCompleting(true);
     setSaveError(null);
     try {
-      const res = await studentApi.completeAttempt(attempt.attemptId, {
+      const payload = {
         durationSeconds: computeElapsedSeconds(),
         usedAacSupport: pendingAacTapDelta > 0,
         usedReadAloud: pendingReadAloudDelta > 0,
         aacTapDelta: pendingAacTapDelta,
         readAloudDelta: pendingReadAloudDelta,
-      });
+      };
+      const res = isFamilyTransport
+        ? await studentApi.completeFamilyAttempt(attempt.attemptId, payload)
+        : await studentApi.completeAttempt(attempt.attemptId, payload);
       setAttempt(res.attempt);
       setPendingAacTapDelta(0);
       setPendingReadAloudDelta(0);
@@ -317,11 +349,14 @@ export function ChapterWorkspace({
     setAbandoning(true);
     setSaveError(null);
     try {
-      const res = await studentApi.abandonAttempt(attempt.attemptId, {
-        confirmed: true,
-        reason: 'paused_for_later',
+      const payload = {
+        confirmed: true as const,
+        reason: 'paused_for_later' as const,
         durationSeconds: computeElapsedSeconds(),
-      });
+      };
+      const res = isFamilyTransport
+        ? await studentApi.abandonFamilyAttempt(attempt.attemptId, payload)
+        : await studentApi.abandonAttempt(attempt.attemptId, payload);
       setAttempt(res.attempt);
       setAbandonDialogOpen(false);
       setLastSavedNotice('Đã tạm dừng hoạt động. Con có thể làm lại bất cứ lúc nào.');
@@ -347,7 +382,7 @@ export function ChapterWorkspace({
           </Button>
         }
       >
-        Bài tập này chưa có thẻ hoạt động nào để thực hành.
+        Hoạt động này chưa có thẻ nội dung nào để thực hành.
       </Alert>
     );
   }
@@ -383,7 +418,7 @@ export function ChapterWorkspace({
           onClick={onBackToDetail}
           leftIcon={<ArrowLeft className="h-4 w-4" aria-hidden="true" />}
         >
-          Về chi tiết bài tập
+          {isFamilyTransport ? 'Về chi tiết chương trình' : 'Về chi tiết bài tập'}
         </Button>
 
         <div className="flex flex-wrap items-center gap-3 text-xs text-[var(--mimora-muted)] min-w-0">
@@ -404,7 +439,7 @@ export function ChapterWorkspace({
       {/* Pinned Activity Switcher */}
       {items.length > 1 && (
         <nav
-          aria-label="Danh sách hoạt động trong bài tập"
+          aria-label="Danh sách hoạt động trong chương trình"
           className="flex flex-wrap gap-2"
         >
           {items.map((item, idx) => {
@@ -444,7 +479,7 @@ export function ChapterWorkspace({
             </span>
           ) : assignment.isReadOnly ? (
             <span className="inline-flex items-center gap-2 text-[var(--mimora-muted)] font-medium">
-              <span>Chế độ xem lại (Bài tập đã đóng)</span>
+              <span>Chế độ xem lại</span>
             </span>
           ) : attempt?.state === 'completed' ? (
             <span className="inline-flex items-center gap-2 text-[var(--mimora-success)] font-semibold">
@@ -734,7 +769,7 @@ export function ChapterWorkspace({
                           saving={saveStatus === 'saving'}
                           onSaveResponse={handleSaveStepInteraction}
                           onRequestHelp={() =>
-                            setAdultHelpToast('Con đã chọn nhờ thầy cô hỗ trợ ở Bước 1.')
+                            setAdultHelpToast(`Con đã chọn nhờ ${adultHelperLabel} hỗ trợ ở Bước 1.`)
                           }
                         />
                       </>
@@ -755,7 +790,7 @@ export function ChapterWorkspace({
                   saving={saveStatus === 'saving'}
                   onSaveResponse={handleSaveStepInteraction}
                   onRequestHelp={() =>
-                    setAdultHelpToast('Con đã chọn nhờ thầy cô hỗ trợ ở Bước 1.')
+                    setAdultHelpToast(`Con đã chọn nhờ ${adultHelperLabel} hỗ trợ ở Bước 1.`)
                   }
                 />
               )}
@@ -769,7 +804,7 @@ export function ChapterWorkspace({
                   saving={saveStatus === 'saving'}
                   onSaveResponse={handleSaveStepInteraction}
                   onRequestHelp={() =>
-                    setAdultHelpToast('Con đã chọn nhờ thầy cô hỗ trợ ở Bước 1.')
+                    setAdultHelpToast(`Con đã chọn nhờ ${adultHelperLabel} hỗ trợ ở Bước 1.`)
                   }
                 />
               )}
@@ -786,7 +821,7 @@ export function ChapterWorkspace({
                     saving={saveStatus === 'saving'}
                     onSaveResponse={handleSaveStepInteraction}
                     onRequestHelp={() =>
-                      setAdultHelpToast('Con đã chọn nhờ thầy cô hỗ trợ ở Bước 1.')
+                      setAdultHelpToast(`Con đã chọn nhờ ${adultHelperLabel} hỗ trợ ở Bước 1.`)
                     }
                   />
                 )}
@@ -854,7 +889,7 @@ export function ChapterWorkspace({
                   saving={saveStatus === 'saving'}
                   onSaveCommunicationChoice={handleSaveStepInteraction}
                   onRequestHelp={() =>
-                    setAdultHelpToast('Con đã chọn nhờ thầy cô hỗ trợ qua Bảng giao tiếp AAC.')
+                    setAdultHelpToast(`Con đã chọn nhờ ${adultHelperLabel} hỗ trợ qua Bảng giao tiếp AAC.`)
                   }
                 />
               )}
@@ -873,7 +908,7 @@ export function ChapterWorkspace({
             onUsedReadAloud={() => setPendingReadAloudDelta((d) => d + 1)}
             onUsedAac={() => setPendingAacTapDelta((d) => d + 1)}
             onRequestAdultHelp={(reason) => {
-              setAdultHelpToast(`Thẻ nhờ trợ giúp đã sẵn sàng cho thầy cô xem: “${reason}”`);
+              setAdultHelpToast(`Thẻ nhờ trợ giúp đã sẵn sàng cho ${adultHelperLabel}: “${reason}”`);
             }}
           />
 

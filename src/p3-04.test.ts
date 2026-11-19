@@ -822,9 +822,9 @@ describe('P3-04 SSR & Semantic Accessibility Rendering Verification', () => {
         `Prohibited browser API in ${file}`
       );
       assert.equal(
-        /\b(GuardianLayout|ParentPortal|SubscriptionPage|CheckoutPage)\b/.test(code),
+        /\b(ParentPortal|SubscriptionPage|CheckoutPage)\b/.test(code),
         false,
-        `Out-of-scope P4 component detected in ${file}`
+        `Out-of-scope billing/parent portal component detected in ${file}`
       );
     }
   });

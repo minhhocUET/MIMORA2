@@ -1,6 +1,12 @@
 import { and, eq, gt, isNull, ne, sql } from 'drizzle-orm';
 import type { OrgRole, SessionScope } from '../db/schema/_shared.ts';
 import {
+  emailVerificationTokens,
+  familyStudents,
+  familyWorkspaces,
+  guardianStudentLinks,
+} from '../db/schema/family.ts';
+import {
   organizationMemberships,
   organizations,
   sessions,
@@ -13,6 +19,7 @@ export type DbOrTx = MimoraDatabase | MimoraTransaction;
 export interface AuthCredentialUserRecord {
   id: string;
   email: string | null;
+  emailVerifiedAt?: Date | null;
   platformUsername: string | null;
   platformRole: string | null;
   displayName: string;
@@ -38,6 +45,36 @@ export interface StudentLoginLookupRecord {
   membership: AuthMembershipSummary;
 }
 
+export interface FamilyStudentLoginLookupRecord {
+  user: AuthCredentialUserRecord;
+  familyWorkspace: {
+    id: string;
+    code: string;
+    name: string;
+    status: string;
+  };
+  familyStudent: {
+    id: string;
+    familyWorkspaceId: string;
+    studentUserId: string;
+    familyUsername: string;
+    status: string;
+  };
+  hasActiveGuardianLink: boolean;
+}
+
+export interface EmailVerificationTokenRecord {
+  id: string;
+  userId: string;
+  purpose: string;
+  emailSnapshot: string;
+  tokenHash: string;
+  expiresAt: Date;
+  consumedAt: Date | null;
+  revokedAt: Date | null;
+  createdAt: Date;
+}
+
 export interface SessionWithContextRecord {
   session: {
     id: string;
@@ -54,6 +91,7 @@ export interface SessionWithContextRecord {
   user: {
     id: string;
     email: string | null;
+    emailVerifiedAt?: Date | null;
     platformUsername: string | null;
     platformRole: string | null;
     displayName: string;
@@ -73,6 +111,7 @@ export interface SessionWithContextRecord {
     orgUsername: string | null;
     status: string;
   } | null;
+  hasActiveFamilyStudentContext?: boolean;
 }
 
 export interface CreateSessionParams {
@@ -108,6 +147,50 @@ export interface AuthRepository {
     organizationCode: string,
     orgUsername: string
   ): Promise<StudentLoginLookupRecord | null>;
+  findFamilyStudentLoginRecord?(
+    workspaceCode: string,
+    familyUsername: string
+  ): Promise<FamilyStudentLoginLookupRecord | null>;
+  createGuardianUser?(
+    params: {
+      id: string;
+      email: string;
+      displayName: string;
+      passwordHash: string;
+      now: Date;
+    },
+    executor?: DbOrTx
+  ): Promise<AuthCredentialUserRecord>;
+  createEmailVerificationToken?(
+    params: {
+      id: string;
+      userId: string;
+      purpose: string;
+      emailSnapshot: string;
+      tokenHash: string;
+      expiresAt: Date;
+      createdAt: Date;
+    },
+    executor?: DbOrTx
+  ): Promise<void>;
+  revokeActiveVerificationTokensForUser?(
+    userId: string,
+    purpose: string,
+    now: Date,
+    executor?: DbOrTx
+  ): Promise<void>;
+  findVerificationTokenByHash?(
+    tokenHash: string,
+    executor?: DbOrTx
+  ): Promise<EmailVerificationTokenRecord | null>;
+  consumeVerificationTokenAndVerifyUser?(
+    params: {
+      tokenId: string;
+      userId: string;
+      now: Date;
+    },
+    executor?: DbOrTx
+  ): Promise<boolean>;
   findMembershipsForUser(
     userId: string,
     roleFilter?: OrgRole,
@@ -166,6 +249,7 @@ export function createAuthRepository(): AuthRepository {
         .select({
           id: users.id,
           email: users.email,
+          emailVerifiedAt: users.emailVerifiedAt,
           platformUsername: users.platformUsername,
           platformRole: users.platformRole,
           displayName: users.displayName,
@@ -188,6 +272,7 @@ export function createAuthRepository(): AuthRepository {
         .select({
           id: users.id,
           email: users.email,
+          emailVerifiedAt: users.emailVerifiedAt,
           platformUsername: users.platformUsername,
           platformRole: users.platformRole,
           displayName: users.displayName,
@@ -208,6 +293,7 @@ export function createAuthRepository(): AuthRepository {
         .select({
           id: users.id,
           email: users.email,
+          emailVerifiedAt: users.emailVerifiedAt,
           platformUsername: users.platformUsername,
           platformRole: users.platformRole,
           displayName: users.displayName,
@@ -231,6 +317,7 @@ export function createAuthRepository(): AuthRepository {
         .select({
           userId: users.id,
           email: users.email,
+          emailVerifiedAt: users.emailVerifiedAt,
           platformUsername: users.platformUsername,
           platformRole: users.platformRole,
           displayName: users.displayName,
@@ -268,6 +355,7 @@ export function createAuthRepository(): AuthRepository {
         user: {
           id: row.userId,
           email: row.email,
+          emailVerifiedAt: row.emailVerifiedAt,
           platformUsername: row.platformUsername,
           platformRole: row.platformRole,
           displayName: row.displayName,
@@ -287,6 +375,193 @@ export function createAuthRepository(): AuthRepository {
           orgUsername: row.orgUsername,
         },
       };
+    },
+
+    async findFamilyStudentLoginRecord(
+      workspaceCode: string,
+      familyUsername: string
+    ): Promise<FamilyStudentLoginLookupRecord | null> {
+      const db = getDb();
+      const rows = await db
+        .select({
+          userId: users.id,
+          email: users.email,
+          emailVerifiedAt: users.emailVerifiedAt,
+          platformUsername: users.platformUsername,
+          platformRole: users.platformRole,
+          displayName: users.displayName,
+          passwordHash: users.passwordHash,
+          userStatus: users.status,
+          failedLoginAttempts: users.failedLoginAttempts,
+          lockedUntil: users.lockedUntil,
+          workspaceId: familyWorkspaces.id,
+          workspaceCode: familyWorkspaces.code,
+          workspaceName: familyWorkspaces.name,
+          workspaceStatus: familyWorkspaces.status,
+          familyStudentId: familyStudents.id,
+          familyWorkspaceId: familyStudents.familyWorkspaceId,
+          studentUserId: familyStudents.studentUserId,
+          familyUsername: familyStudents.familyUsername,
+          familyStudentStatus: familyStudents.status,
+        })
+        .from(familyWorkspaces)
+        .innerJoin(
+          familyStudents,
+          and(
+            eq(familyStudents.familyWorkspaceId, familyWorkspaces.id),
+            eq(familyStudents.familyUsername, familyUsername)
+          )
+        )
+        .innerJoin(users, eq(users.id, familyStudents.studentUserId))
+        .where(eq(familyWorkspaces.code, workspaceCode))
+        .limit(1);
+
+      const row = rows[0];
+      if (!row) {
+        return null;
+      }
+
+      const activeLinks = await db
+        .select({ id: guardianStudentLinks.id })
+        .from(guardianStudentLinks)
+        .where(
+          and(
+            eq(guardianStudentLinks.familyWorkspaceId, row.workspaceId),
+            eq(guardianStudentLinks.studentUserId, row.userId),
+            eq(guardianStudentLinks.relationshipStatus, 'active')
+          )
+        )
+        .limit(1);
+
+      return {
+        user: {
+          id: row.userId,
+          email: row.email,
+          emailVerifiedAt: row.emailVerifiedAt,
+          platformUsername: row.platformUsername,
+          platformRole: row.platformRole,
+          displayName: row.displayName,
+          passwordHash: row.passwordHash,
+          status: row.userStatus,
+          failedLoginAttempts: row.failedLoginAttempts,
+          lockedUntil: row.lockedUntil,
+        },
+        familyWorkspace: {
+          id: row.workspaceId,
+          code: row.workspaceCode,
+          name: row.workspaceName,
+          status: row.workspaceStatus,
+        },
+        familyStudent: {
+          id: row.familyStudentId,
+          familyWorkspaceId: row.familyWorkspaceId,
+          studentUserId: row.studentUserId,
+          familyUsername: row.familyUsername,
+          status: row.familyStudentStatus,
+        },
+        hasActiveGuardianLink: activeLinks.length > 0,
+      };
+    },
+
+    async createGuardianUser(params, executor) {
+      const db = getExecutor(executor);
+      const row: typeof users.$inferInsert = {
+        id: params.id,
+        email: params.email,
+        emailVerifiedAt: null,
+        platformUsername: null,
+        displayName: params.displayName,
+        platformRole: 'guardian',
+        passwordHash: params.passwordHash,
+        status: 'active',
+        failedLoginAttempts: 0,
+        lockedUntil: null,
+        lastLoginAt: null,
+        passwordUpdatedAt: params.now,
+        createdAt: params.now,
+        updatedAt: params.now,
+      };
+      await db.insert(users).values(row);
+      return {
+        id: row.id,
+        email: row.email ?? null,
+        emailVerifiedAt: null,
+        platformUsername: null,
+        platformRole: 'guardian',
+        displayName: row.displayName,
+        passwordHash: row.passwordHash,
+        status: 'active',
+        failedLoginAttempts: 0,
+        lockedUntil: null,
+      };
+    },
+
+    async createEmailVerificationToken(params, executor) {
+      const db = getExecutor(executor);
+      await db.insert(emailVerificationTokens).values({
+        id: params.id,
+        userId: params.userId,
+        purpose: params.purpose,
+        emailSnapshot: params.emailSnapshot,
+        tokenHash: params.tokenHash,
+        expiresAt: params.expiresAt,
+        consumedAt: null,
+        revokedAt: null,
+        createdAt: params.createdAt,
+      });
+    },
+
+    async revokeActiveVerificationTokensForUser(userId, purpose, now, executor) {
+      const db = getExecutor(executor);
+      await db
+        .update(emailVerificationTokens)
+        .set({ revokedAt: now })
+        .where(
+          and(
+            eq(emailVerificationTokens.userId, userId),
+            eq(emailVerificationTokens.purpose, purpose),
+            isNull(emailVerificationTokens.consumedAt),
+            isNull(emailVerificationTokens.revokedAt)
+          )
+        );
+    },
+
+    async findVerificationTokenByHash(tokenHash, executor) {
+      const db = getExecutor(executor);
+      const rows = await db
+        .select()
+        .from(emailVerificationTokens)
+        .where(eq(emailVerificationTokens.tokenHash, tokenHash))
+        .limit(1);
+      return rows[0] ?? null;
+    },
+
+    async consumeVerificationTokenAndVerifyUser(params, executor) {
+      const db = getExecutor(executor);
+      const [tokenResult] = await db
+        .update(emailVerificationTokens)
+        .set({ consumedAt: params.now })
+        .where(
+          and(
+            eq(emailVerificationTokens.id, params.tokenId),
+            isNull(emailVerificationTokens.consumedAt),
+            isNull(emailVerificationTokens.revokedAt),
+            gt(emailVerificationTokens.expiresAt, params.now)
+          )
+        );
+      if ((tokenResult.affectedRows ?? 0) === 0) {
+        return false;
+      }
+
+      await db
+        .update(users)
+        .set({
+          emailVerifiedAt: params.now,
+          updatedAt: params.now,
+        })
+        .where(and(eq(users.id, params.userId), isNull(users.emailVerifiedAt)));
+
+      return true;
     },
 
     async findMembershipsForUser(
@@ -353,6 +628,7 @@ export function createAuthRepository(): AuthRepository {
           revokedReason: sessions.revokedReason,
           userId: users.id,
           email: users.email,
+          emailVerifiedAt: users.emailVerifiedAt,
           platformUsername: users.platformUsername,
           platformRole: users.platformRole,
           displayName: users.displayName,
@@ -389,9 +665,38 @@ export function createAuthRepository(): AuthRepository {
       if (
         row.sessionScope !== 'platform_admin' &&
         row.sessionScope !== 'teacher' &&
-        row.sessionScope !== 'student'
+        row.sessionScope !== 'student' &&
+        row.sessionScope !== 'guardian'
       ) {
         return null;
+      }
+
+      let hasActiveFamilyStudentContext = false;
+      if (row.sessionScope === 'student' && row.activeOrganizationId === null) {
+        const famRows = await db
+          .select({ id: familyStudents.id })
+          .from(familyStudents)
+          .innerJoin(
+            familyWorkspaces,
+            eq(familyWorkspaces.id, familyStudents.familyWorkspaceId)
+          )
+          .innerJoin(
+            guardianStudentLinks,
+            and(
+              eq(guardianStudentLinks.familyWorkspaceId, familyWorkspaces.id),
+              eq(guardianStudentLinks.studentUserId, row.userId),
+              eq(guardianStudentLinks.relationshipStatus, 'active')
+            )
+          )
+          .where(
+            and(
+              eq(familyStudents.studentUserId, row.userId),
+              eq(familyStudents.status, 'active'),
+              eq(familyWorkspaces.status, 'active')
+            )
+          )
+          .limit(1);
+        hasActiveFamilyStudentContext = famRows.length > 0;
       }
 
       return {
@@ -410,6 +715,7 @@ export function createAuthRepository(): AuthRepository {
         user: {
           id: row.userId,
           email: row.email,
+          emailVerifiedAt: row.emailVerifiedAt,
           platformUsername: row.platformUsername,
           platformRole: row.platformRole,
           displayName: row.displayName,
@@ -433,6 +739,7 @@ export function createAuthRepository(): AuthRepository {
               status: row.membershipStatus!,
             }
           : null,
+        hasActiveFamilyStudentContext,
       };
     },
 

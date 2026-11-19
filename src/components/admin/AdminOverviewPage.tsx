@@ -1,4 +1,4 @@
-import { ArrowRight, BarChart3, BookOpenCheck, Building2, FileSpreadsheet, GraduationCap, ShieldAlert, Users } from 'lucide-react';
+import { ArrowRight, BarChart3, BookOpenCheck, Building2, FileSpreadsheet, GraduationCap, HeartHandshake, ShieldAlert, Users } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { adminApi } from '../../api/admin.ts';
 import { ApiClientError } from '../../api/client.ts';
@@ -21,6 +21,7 @@ export type AdminSection =
   | 'classes'
   | 'csv_import'
   | 'content'
+  | 'family_programs'
   | 'approval_queue'
   | 'insights';
 
@@ -222,6 +223,24 @@ export function AdminOverviewPage({ user, locale, onNavigate }: AdminOverviewPag
               onClick={() => onNavigate('approval_queue')}
             >
               Hàng đợi duyệt
+            </Button>
+          </CardContent>
+        </Card>
+
+        <Card padding="md">
+          <CardHeader
+            title="Chương trình Gia đình"
+            description="Thiết kế chương trình SEL không cần giáo viên và kích hoạt an toàn cho Không gian Gia đình."
+          />
+          <CardContent>
+            <Button
+              variant="secondary"
+              size="sm"
+              leftIcon={<HeartHandshake className="h-4 w-4" aria-hidden="true" />}
+              rightIcon={<ArrowRight className="h-4 w-4" aria-hidden="true" />}
+              onClick={() => onNavigate('family_programs')}
+            >
+              Quản lý chương trình gia đình
             </Button>
           </CardContent>
         </Card>

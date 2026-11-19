@@ -192,7 +192,7 @@ describe('P3-01 Frontend API client & security hygiene', () => {
 });
 
 describe('P3-01 Role derivation & Chapter UI compatibility adapter', () => {
-  it('derives strictly from the 3 supported MVP roles only', () => {
+  it('derives strictly from the 4 supported roles only', () => {
     const baseUser = {
       id: 'u1',
       displayName: 'User',
@@ -201,14 +201,15 @@ describe('P3-01 Role derivation & Chapter UI compatibility adapter', () => {
       platformRole: null,
     };
     const makeCtx = (
-      platformRole: 'platform_admin' | null,
-      scope: 'platform_admin' | 'teacher' | 'student'
+      platformRole: 'platform_admin' | 'guardian' | null,
+      scope: 'platform_admin' | 'guardian' | 'teacher' | 'student'
     ): AuthContextPayload => ({
       user: { ...baseUser, platformRole },
       session: {
         id: 's1',
         scope,
-        activeOrganizationId: scope === 'platform_admin' ? null : 'org1',
+        activeOrganizationId:
+          scope === 'platform_admin' || scope === 'guardian' ? null : 'org1',
         idleExpiresAt: '2026-11-18T12:00:00Z',
         absoluteExpiresAt: '2026-11-19T12:00:00Z',
       },
@@ -219,10 +220,13 @@ describe('P3-01 Role derivation & Chapter UI compatibility adapter', () => {
     });
 
     assert.equal(deriveResolvedRole(makeCtx('platform_admin', 'platform_admin')), 'platform_admin');
+    assert.equal(deriveResolvedRole(makeCtx('guardian', 'guardian')), 'guardian');
     assert.equal(deriveResolvedRole(makeCtx(null, 'teacher')), 'teacher');
     assert.equal(deriveResolvedRole(makeCtx(null, 'student')), 'student');
     // Mismatched privilege/scope yields null
     assert.equal(deriveResolvedRole(makeCtx(null, 'platform_admin')), null);
+    assert.equal(deriveResolvedRole(makeCtx(null, 'guardian')), null);
+    assert.equal(deriveResolvedRole(makeCtx('guardian', 'teacher')), null);
     assert.equal(deriveResolvedRole(null), null);
   });
 

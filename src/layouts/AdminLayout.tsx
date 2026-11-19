@@ -5,6 +5,7 @@ import {
   ClipboardCheck,
   FileSpreadsheet,
   GraduationCap,
+  HeartHandshake,
   KeyRound,
   LayoutDashboard,
   LogOut,
@@ -20,6 +21,7 @@ import { AdminApprovalQueuePage } from '../components/admin/AdminApprovalQueuePa
 import { AdminClassesPage } from '../components/admin/AdminClassesPage.tsx';
 import { AdminContentLibraryPage } from '../components/admin/AdminContentLibraryPage.tsx';
 import { AdminCsvImportPage } from '../components/admin/AdminCsvImportPage.tsx';
+import { AdminFamilyProgramsPage } from '../components/admin/AdminFamilyProgramsPage.tsx';
 import { AdminInsightsPage } from '../components/admin/AdminInsightsPage.tsx';
 import { AdminOrganizationsPage } from '../components/admin/AdminOrganizationsPage.tsx';
 import { AdminOverviewPage, type AdminSection } from '../components/admin/AdminOverviewPage.tsx';
@@ -49,6 +51,7 @@ export function AdminLayout() {
     { id: 'classes', label: t.admin.navClasses, icon: <GraduationCap className="h-4 w-4" aria-hidden="true" /> },
     { id: 'csv_import', label: t.admin.navCsvImport, icon: <FileSpreadsheet className="h-4 w-4" aria-hidden="true" /> },
     { id: 'content', label: t.admin.navContent, icon: <BookOpenCheck className="h-4 w-4" aria-hidden="true" /> },
+    { id: 'family_programs', label: t.admin.navFamilyPrograms, icon: <HeartHandshake className="h-4 w-4" aria-hidden="true" /> },
     { id: 'approval_queue', label: t.admin.navApprovalQueue, icon: <ClipboardCheck className="h-4 w-4" aria-hidden="true" /> },
     { id: 'insights', label: t.admin.navInsights, icon: <BarChart3 className="h-4 w-4" aria-hidden="true" /> },
   ];
@@ -111,6 +114,9 @@ export function AdminLayout() {
       )}
       {section === 'content' && (
         <AdminContentLibraryPage locale={locale} onToast={setToastMsg} />
+      )}
+      {section === 'family_programs' && (
+        <AdminFamilyProgramsPage locale={locale} onToast={setToastMsg} />
       )}
       {section === 'approval_queue' && (
         <AdminApprovalQueuePage locale={locale} onToast={setToastMsg} />

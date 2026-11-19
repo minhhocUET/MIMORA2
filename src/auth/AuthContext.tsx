@@ -39,7 +39,9 @@ export interface AuthState {
   clearAuthNotice: () => void;
 }
 
-const AuthContext = createContext<AuthState | null>(null);
+export type AuthContextValue = AuthState;
+
+export const AuthContext = createContext<AuthState | null>(null);
 
 export function deriveResolvedRole(ctx: AuthContextPayload | null): MvpRole | null {
   if (!ctx) {
@@ -50,6 +52,9 @@ export function deriveResolvedRole(ctx: AuthContextPayload | null): MvpRole | nu
     ctx.session.scope === 'platform_admin'
   ) {
     return 'platform_admin';
+  }
+  if (ctx.user.platformRole === 'guardian' && ctx.session.scope === 'guardian') {
+    return 'guardian';
   }
   if (ctx.session.scope === 'teacher' && ctx.user.platformRole === null) {
     return 'teacher';

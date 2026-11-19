@@ -35,7 +35,26 @@ export const loginBodySchema = z.discriminatedUnion('mode', [
     orgUsername: z.string().trim().min(1).max(64),
     password: z.string().min(1).max(1024),
   }),
+  z.object({
+    mode: z.literal('guardian'),
+    email: z.string().trim().email().max(255),
+    password: z.string().min(1).max(1024),
+  }),
 ]);
+
+export const guardianRegisterBodySchema = z
+  .object({
+    displayName: z.string().trim().min(1).max(255),
+    email: z.string().trim().email().max(255),
+    password: z.string().min(8).max(1024),
+  })
+  .strict();
+
+export const guardianVerifyEmailBodySchema = z
+  .object({
+    token: z.string().trim().min(1).max(512),
+  })
+  .strict();
 
 export const switchOrganizationBodySchema = z.object({
   organizationId: z.string().trim().regex(UUID_REGEX),
@@ -66,6 +85,87 @@ export function createAuthRouter(deps?: AuthRouterDeps): Router {
     deps?.authenticatedCsrf ??
     createAuthenticatedCsrfMiddleware({
       config: deps?.getConfig ? deps.getConfig() : undefined,
+    });
+
+  router
+    .route('/guardian/register')
+    .post(
+      preAuthCsrf,
+      asyncHandler(async (req: Request, res: Response) => {
+        const body = validateWithSchema(guardianRegisterBodySchema, req.body, 'body');
+        const result = await authService.registerGuardian(body, {
+          ip: req.ip,
+          ipPrefix: extractSafeIpPrefix(req.ip),
+          userAgentHash: hashUserAgent(req.get('user-agent')),
+        });
+        res.status(201).json({
+          status: 'ok',
+          ...result,
+        });
+      })
+    )
+    .all((_req, res) => {
+      res.set('Allow', 'POST').status(405).json({
+        status: 'error',
+        code: ApiErrors.methodNotAllowed().code,
+        messageKey: ApiErrors.methodNotAllowed().messageKey,
+        message: ApiErrors.methodNotAllowed().message,
+        locale: 'vi-VN',
+      });
+    });
+
+  router
+    .route('/guardian/verify-email')
+    .post(
+      preAuthCsrf,
+      asyncHandler(async (req: Request, res: Response) => {
+        const body = validateWithSchema(guardianVerifyEmailBodySchema, req.body, 'body');
+        const result = await authService.verifyGuardianEmail(body, {
+          ip: req.ip,
+          ipPrefix: extractSafeIpPrefix(req.ip),
+          userAgentHash: hashUserAgent(req.get('user-agent')),
+        });
+        res.status(200).json({
+          status: 'ok',
+          ...result,
+        });
+      })
+    )
+    .all((_req, res) => {
+      res.set('Allow', 'POST').status(405).json({
+        status: 'error',
+        code: ApiErrors.methodNotAllowed().code,
+        messageKey: ApiErrors.methodNotAllowed().messageKey,
+        message: ApiErrors.methodNotAllowed().message,
+        locale: 'vi-VN',
+      });
+    });
+
+  router
+    .route('/guardian/resend-verification')
+    .post(
+      authMiddlewares.requireAuth,
+      authMiddlewares.requireRole('guardian'),
+      authenticatedCsrf,
+      asyncHandler(async (req: Request, res: Response) => {
+        const result = await authService.resendGuardianVerification(req.auth!, {
+          ip: req.ip,
+          ipPrefix: extractSafeIpPrefix(req.ip),
+        });
+        res.status(200).json({
+          status: 'ok',
+          ...result,
+        });
+      })
+    )
+    .all((_req, res) => {
+      res.set('Allow', 'POST').status(405).json({
+        status: 'error',
+        code: ApiErrors.methodNotAllowed().code,
+        messageKey: ApiErrors.methodNotAllowed().messageKey,
+        message: ApiErrors.methodNotAllowed().message,
+        locale: 'vi-VN',
+      });
     });
 
   router

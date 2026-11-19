@@ -6,3 +6,5 @@ export * from './assignments';
 export * from './observations';
 export * from './insights';
 export * from './audit';
+export * from './family';
+export * from './family-learning';

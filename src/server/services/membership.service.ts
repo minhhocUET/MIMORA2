@@ -857,7 +857,7 @@ export function createMembershipService(deps?: MembershipServiceDeps) {
             throw ApiErrors.conflict(
               'PLATFORM_ADMIN_MEMBERSHIP_DISALLOWED',
               'error.membership.platform_admin_disallowed',
-              'Tài khoản quản trị viên nền tảng không thể gắn làm thành viên trường học.'
+              'Tài khoản quản trị viên nền tảng hoặc người giám hộ không thể gắn làm thành viên trường học.'
             );
           }
           if (user.status !== 'active') {

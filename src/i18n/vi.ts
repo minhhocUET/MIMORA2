@@ -12,16 +12,33 @@ export const viMessages = {
     platform_admin: 'Quản trị hệ thống',
     teacher: 'Giáo viên',
     student: 'Học sinh',
+    guardian: 'Phụ huynh / Giám hộ',
   },
   auth: {
     pageTitle: 'Đăng nhập MIMORA',
     pageSubtitle: 'Không gian học tập cảm xúc - xã hội an toàn, tôn trọng nhịp độ của từng trẻ.',
     modeAdminTeacher: 'Quản trị / Giáo viên',
     modeStudent: 'Học sinh',
+    modeGuardian: 'Phụ huynh / Giám hộ',
     identifierLabel: 'Email hoặc tên đăng nhập',
     identifierPlaceholder: 'nhap-email@truong.edu.vn hoặc username',
-    orgCodeLabel: 'Mã trường học',
-    orgCodePlaceholder: 'Ví dụ: MIMORA01',
+    guardianEmailLabel: 'Email người giám hộ',
+    guardianEmailPlaceholder: 'phu.huynh@example.com',
+    guardianDisplayNameLabel: 'Họ tên người giám hộ',
+    guardianDisplayNamePlaceholder: 'Ví dụ: Nguyễn Lan Anh',
+    guardianRegisterToggle: 'Đăng ký tài khoản Phụ huynh / Giám hộ',
+    guardianBackToLogin: 'Quay lại đăng nhập',
+    guardianRegisterSubmit: 'Tạo tài khoản người giám hộ',
+    guardianRegisterSubmitting: 'Đang tạo tài khoản...',
+    guardianVerifyTitle: 'Xác minh email người giám hộ',
+    guardianVerifyNotice:
+      'Tài khoản đang ở trạng thái chờ xác minh email. Hệ thống hiện chưa kết nối dịch vụ gửi email tự động nên chưa thể gửi thư tới hộp thư của bạn.',
+    guardianVerifyTokenLabel: 'Mã xác minh email',
+    guardianVerifyTokenPlaceholder: 'Nhập mã xác minh từ quản trị hoặc hệ thống thư (nếu đã cấu hình)',
+    guardianVerifySubmit: 'Xác minh email',
+    guardianVerifySuccess: 'Đã xác minh email thành công. Bạn có thể đăng nhập để sử dụng không gian gia đình.',
+    orgCodeLabel: 'Mã trường hoặc Mã gia đình',
+    orgCodePlaceholder: 'Ví dụ: MIMORA01 hoặc FAM-XXXXXX',
     orgUsernameLabel: 'Tên tài khoản học sinh',
     orgUsernamePlaceholder: 'Ví dụ: minh.an',
     passwordLabel: 'Mật khẩu',
@@ -30,7 +47,10 @@ export const viMessages = {
     hidePassword: 'Ẩn mật khẩu',
     submitLogin: 'Đăng nhập',
     submittingLogin: 'Đang xác thực...',
-    studentNoEmailHint: 'Học sinh không cần email cá nhân. Sử dụng mã trường và tên tài khoản do giáo viên cấp.',
+    studentNoEmailHint:
+      'Học sinh không cần email cá nhân. Sử dụng mã trường (hoặc mã gia đình FAM-...) và tên tài khoản được cấp.',
+    guardianLoginHint:
+      'Đăng nhập bằng email người giám hộ — không cần nhập mã trường học.',
     validationRequired: 'Vui lòng điền đầy đủ thông tin bắt buộc.',
     logout: 'Đăng xuất',
     loggingOut: 'Đang đăng xuất...',
@@ -64,6 +84,16 @@ export const viMessages = {
     CSRF_TOKEN_INVALID: 'Mã bảo vệ phiên (CSRF) không còn hợp lệ. Vui lòng tải lại hoặc đăng nhập lại.',
     SERVICE_UNAVAILABLE_PROXY: 'Máy chủ tạm thời chưa phản hồi. Vui lòng thử lại sau ít giây.',
     NETWORK_ERROR: 'Không thể kết nối tới máy chủ MIMORA. Vui lòng kiểm tra kết nối mạng.',
+    GUARDIAN_EMAIL_VERIFICATION_REQUIRED:
+      'Tài khoản người giám hộ cần xác minh email trước khi quản lý không gian gia đình và hồ sơ học sinh.',
+    EMAIL_VERIFICATION_INVALID_OR_EXPIRED:
+      'Mã xác minh email không hợp lệ, đã sử dụng hoặc đã hết hạn.',
+    INVITATION_INVALID_OR_EXPIRED:
+      'Mã liên kết không hợp lệ, đã được sử dụng, đã thu hồi hoặc đã hết hạn.',
+    FAMILY_USERNAME_TAKEN:
+      'Tên đăng nhập này đã được sử dụng trong không gian gia đình.',
+    GUARDIAN_LINK_ALREADY_EXISTS:
+      'Học sinh này đã được liên kết với tài khoản của bạn trong không gian gia đình.',
     VALIDATION_ERROR: 'Thông tin nhập vào chưa hợp lệ. Vui lòng kiểm tra lại.',
     UNKNOWN: 'Đã xảy ra sự cố ngoài ý muốn. Vui lòng thử lại.',
   },
@@ -76,6 +106,7 @@ export const viMessages = {
     navCsvImport: 'Nhập học sinh CSV',
     navUsersClasses: 'Tài khoản & Lớp học',
     navContent: 'Thư viện SEL',
+    navFamilyPrograms: 'Chương trình Gia đình',
     navApprovalQueue: 'Hàng đợi Phê duyệt',
     navInsights: 'Thống kê Tổng hợp (k=5)',
     welcomeTitle: 'Không gian điều hành nền tảng MIMORA',
@@ -120,5 +151,28 @@ export const viMessages = {
     aacReadAloudPathLabel: 'Tùy chọn hỗ trợ AAC & Đọc to đã sẵn sàng ngay bên trong từng bài học.',
     previewSectionTitle: 'Bộ thẻ minh họa thành phần giao diện (Mẫu tham khảo)',
     previewDisclaimer: 'Đây là mẫu minh họa thành phần giao diện (không phải bài tập hay dữ liệu máy chủ của con).',
+    familySpaceLabel: 'Không gian Gia đình',
+    familyProgramsHeading: 'Chương trình Gia đình của con',
+    familyProgramsEmptyTitle: 'Chưa có chương trình gia đình nào được mở',
+    familyProgramsEmptyBody:
+      'Khi phụ huynh hoặc quản trị viên mở một chương trình học tại nhà cho con, các chương trình sẽ xuất hiện ngay tại đây.',
+    familySpaceEmptyTitle: 'Không gian học tập gia đình của con đã sẵn sàng',
+    familySpaceEmptyBody:
+      'Hiện tài khoản của con đang học trong Không gian Gia đình và chưa có bài tập trường học nào được gắn. Khi trường học giao bài tập hoặc mở chương trình luyện tập tại nhà, nội dung sẽ xuất hiện tại đây.',
+    statusNotStarted: 'Chưa bắt đầu',
+    statusInProgress: 'Đang học',
+    statusCompleted: 'Đã hoàn thành',
+  },
+  guardian: {
+    portalName: 'Cổng Phụ huynh & Gia đình',
+    navWorkspaces: 'Không gian Gia đình',
+    navStudents: 'Học sinh liên kết',
+    navProgress: 'Tiến độ học tập',
+    navSettings: 'Tài khoản & Xác minh',
+    privacyNote:
+      'Chính sách bảo vệ trẻ em: Phụ huynh chỉ xem thông tin tài khoản an toàn và tóm tắt trạng thái hoàn thành (Chưa bắt đầu / Đang học / Đã hoàn thành) — tuyệt đối không xem câu trả lời chi tiết, nhật ký AAC hay ghi chú riêng tư của giáo viên.',
+    verificationPendingTitle: 'Cần xác minh email trước khi quản lý gia đình',
+    verificationPendingBody:
+      'Vì an toàn của trẻ em, tài khoản người giám hộ chỉ có thể tạo Không gian Gia đình hoặc liên kết học sinh sau khi email đã được xác minh.',
   },
 } as const;

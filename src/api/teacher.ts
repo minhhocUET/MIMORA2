@@ -27,6 +27,7 @@ import type {
   SafeTeacherObservationView,
   StudentSupportPreferences,
 } from '../types/teacher.ts';
+import type { SafeInvitationStatusView } from '../types/guardian.ts';
 
 function buildQuery(params: Record<string, string | number | boolean | undefined | null>): string {
   const sp = new URLSearchParams();
@@ -418,5 +419,40 @@ export const teacherApi = {
       `/observations/${encodeURIComponent(observationId)}`,
       { method: 'DELETE', fetchImpl }
     );
+  },
+
+  // School Student -> Guardian Link Invitations
+  listGuardianInvitations(membershipId: string, fetchImpl?: typeof fetch) {
+    return apiRequest<{ status: 'ok'; invitations: SafeInvitationStatusView[] }>(
+      `/students/${encodeURIComponent(membershipId)}/guardian-invitations`,
+      { method: 'GET', fetchImpl }
+    );
+  },
+
+  createGuardianInvitation(
+    membershipId: string,
+    body: { expiresInHours?: number } = {},
+    fetchImpl?: typeof fetch
+  ) {
+    return apiRequest<{
+      status: 'ok';
+      invitation: SafeInvitationStatusView;
+      claimCode: string;
+    }>(`/students/${encodeURIComponent(membershipId)}/guardian-invitations`, {
+      method: 'POST',
+      body,
+      fetchImpl,
+    });
+  },
+
+  revokeGuardianInvitation(invitationId: string, fetchImpl?: typeof fetch) {
+    return apiRequest<{
+      status: 'ok';
+      invitation: { id: string; status: 'revoked'; revokedAt: string };
+    }>(`/students/guardian-invitations/${encodeURIComponent(invitationId)}/revoke`, {
+      method: 'POST',
+      body: {},
+      fetchImpl,
+    });
   },
 };

@@ -18,7 +18,9 @@ import { createAssignmentsRouters } from './src/server/routes/assignments.routes
 import { createAttemptsRouters } from './src/server/routes/attempts.routes.ts';
 import { createAuthRouter } from './src/server/routes/auth.routes.ts';
 import { createClassesRouters } from './src/server/routes/classes.routes.ts';
+import { createFamilyLearningRouters } from './src/server/routes/family-learning.routes.ts';
 import { createGoalsRouters } from './src/server/routes/goals.routes.ts';
+import { createGuardianRouters } from './src/server/routes/guardian.routes.ts';
 import { createLibraryRouter } from './src/server/routes/library.routes.ts';
 import { createObservationsRouter } from './src/server/routes/observations.routes.ts';
 import { createAdminOrganizationsRouter } from './src/server/routes/organizations.routes.ts';
@@ -193,21 +195,37 @@ async function startServer() {
     createAttemptsRouters();
   const { teacherStudentGoalsRouter, teacherGoalsRouter, studentGoalsRouter } =
     createGoalsRouters();
+  const {
+    guardianRouter,
+    teacherGuardianInvitationsRouter,
+    adminGuardianInvitationsRouter,
+  } = createGuardianRouters();
+  const {
+    adminFamilyProgramsRouter,
+    guardianLearningRouter,
+    studentFamilyLearningRouter,
+  } = createFamilyLearningRouters();
   app.use('/api/v1/admin/organizations/:orgId/classes', adminClassesRouter);
   app.use('/api/v1/admin/insights', createAdminInsightsRouter());
+  app.use('/api/v1/admin', adminGuardianInvitationsRouter);
+  app.use('/api/v1/admin', adminFamilyProgramsRouter);
   app.use('/api/v1/admin', createAdminUsersRouter());
   app.use('/api/v1/admin', createAdminContentRouter());
   app.use('/api/v1/admin/organizations', createAdminOrganizationsRouter());
+  app.use('/api/v1/guardian', guardianRouter);
+  app.use('/api/v1/guardian', guardianLearningRouter);
   app.use('/api/v1/classes', teacherClassesRouter);
   app.use('/api/v1/library', createLibraryRouter());
   app.use('/api/v1/assignments', teacherAssignmentsRouter);
   app.use('/api/v1/assignments', teacherAssignmentAttemptsRouter);
   app.use('/api/v1/observations', createObservationsRouter());
+  app.use('/api/v1/students', teacherGuardianInvitationsRouter);
   app.use('/api/v1/students', teacherStudentGoalsRouter);
   app.use('/api/v1/goals', teacherGoalsRouter);
   app.use('/api/v1/student/assignments', studentAssignmentsRouter);
   app.use('/api/v1/student', studentGoalsRouter);
   app.use('/api/v1/student', studentAttemptsRouter);
+  app.use('/api/v1/student', studentFamilyLearningRouter);
 
   app.use('/api', apiNotFoundHandler);
   app.use('/api', apiErrorHandler);

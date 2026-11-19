@@ -5,7 +5,7 @@ import { auditLogs } from '../db/schema/audit.ts';
 import { generateUuidV7 } from '../db/uuid.ts';
 import { AppError } from '../http/errors.ts';
 
-export type AuditActorRole = 'platform_admin' | 'teacher' | 'student';
+export type AuditActorRole = 'platform_admin' | 'teacher' | 'student' | 'guardian';
 export type AuditInsertExecutor = Pick<MimoraDatabase, 'insert'>;
 
 const AUDIT_EVENT_SET = new Set<string>(AUDIT_EVENT_TYPES);
@@ -54,6 +54,11 @@ const FORBIDDEN_NORMALIZED_KEYS = new Set([
   'goaldescription',
   'supportpreferences',
   'supportpreferencesjson',
+  'verificationtoken',
+  'claimcode',
+  'invitationcode',
+  'invitationtoken',
+  'plaintexttoken',
 ]);
 
 const SENSITIVE_KEY_SUFFIXES = ['password', 'passwordhash', 'tokenhash', 'notebody'];
@@ -165,7 +170,7 @@ export type AuditLogInsertRow = typeof auditLogs.$inferInsert;
 const auditInputSchema = z.object({
   organizationId: z.string().regex(UUID_REGEX).nullable().optional(),
   actorUserId: z.string().regex(UUID_REGEX).nullable().optional(),
-  actorRole: z.enum(['platform_admin', 'teacher', 'student']).nullable().optional(),
+  actorRole: z.enum(['platform_admin', 'teacher', 'student', 'guardian']).nullable().optional(),
   eventType: z.string().min(1).max(64),
   targetType: z.string().trim().min(1).max(64).nullable().optional(),
   targetId: z.string().regex(UUID_REGEX).nullable().optional(),
