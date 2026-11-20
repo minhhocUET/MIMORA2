@@ -29,6 +29,13 @@ import {
   type AuditActorRole,
   type AuditInsertExecutor,
 } from './audit.service.ts';
+import {
+  createMailService,
+  type MailDeliveryStatus,
+  type MailService,
+} from './mail.service.ts';
+
+export type { MailDeliveryStatus };
 
 /**
  * Valid dummy scrypt$v1$ hash used solely to equalize password-verification timing
@@ -119,13 +126,6 @@ export interface AuthenticatedPrincipal {
   platformUsername: string | null;
 }
 
-export interface MailDeliveryStatus {
-  configured: false;
-  provider: null;
-  delivered: false;
-  verificationState: 'pending_verification';
-}
-
 export interface GuardianRegistrationResult {
   user: SafeUserView;
   requiresEmailVerification: true;
@@ -192,6 +192,7 @@ export interface AuthServiceDeps {
   rateLimiter?: InMemoryRateLimiter;
   scryptLimiter?: ScryptConcurrencyLimiter;
   getConfig?: () => ServerConfig;
+  mailService?: MailService;
   now?: () => Date;
   auditFn?: (
     input: Parameters<typeof recordAuditEvent>[0],
@@ -210,6 +211,7 @@ export function createAuthService(deps?: AuthServiceDeps) {
   const repo = deps?.repo ?? createAuthRepository();
   const rateLimiter = deps?.rateLimiter ?? new InMemoryRateLimiter();
   const getConfig = deps?.getConfig ?? getServerConfig;
+  const mailService = deps?.mailService ?? createMailService({ getConfig });
   const scryptLimiter =
     deps?.scryptLimiter ??
     new ScryptConcurrencyLimiter({
@@ -432,6 +434,8 @@ export function createAuthService(deps?: AuthServiceDeps) {
       const tokenId = generateUuidV7();
       const expiresAt = new Date(now.getTime() + EMAIL_VERIFY_TTL_MS);
 
+      const mailConfigured = mailService.isConfigured();
+
       const createdUser = await repo.withTransaction(async (tx) => {
         const user = await repo.createGuardianUser!(
           {
@@ -468,7 +472,7 @@ export function createAuthService(deps?: AuthServiceDeps) {
             ipPrefix: ctx.ipPrefix,
             metadata: {
               verificationState: 'pending_verification',
-              mailDeliveryConfigured: false,
+              mailDeliveryConfigured: mailConfigured,
             },
           },
           tx
@@ -483,6 +487,22 @@ export function createAuthService(deps?: AuthServiceDeps) {
         tokenHash,
       });
 
+      let mailDelivery: MailDeliveryStatus;
+      try {
+        mailDelivery = await mailService.sendGuardianVerificationEmail({
+          to: createdUser.email!,
+          displayName: createdUser.displayName,
+          rawToken,
+        });
+      } catch {
+        mailDelivery = {
+          configured: mailConfigured,
+          provider: mailService.getProvider(),
+          delivered: false,
+          verificationState: 'pending_verification',
+        };
+      }
+
       return {
         user: {
           id: createdUser.id,
@@ -493,12 +513,7 @@ export function createAuthService(deps?: AuthServiceDeps) {
           emailVerified: false,
         },
         requiresEmailVerification: true,
-        mailDelivery: {
-          configured: false,
-          provider: null,
-          delivered: false,
-          verificationState: 'pending_verification',
-        },
+        mailDelivery,
       };
     },
 
@@ -659,6 +674,8 @@ export function createAuthService(deps?: AuthServiceDeps) {
       const tokenId = generateUuidV7();
       const expiresAt = new Date(now.getTime() + EMAIL_VERIFY_TTL_MS);
 
+      const mailConfigured = mailService.isConfigured();
+
       await repo.withTransaction(async (tx) => {
         await repo.revokeActiveVerificationTokensForUser!(
           user.id,
@@ -690,7 +707,7 @@ export function createAuthService(deps?: AuthServiceDeps) {
             targetId: user.id,
             ipPrefix: ctx.ipPrefix,
             metadata: {
-              mailDeliveryConfigured: false,
+              mailDeliveryConfigured: mailConfigured,
             },
           },
           tx
@@ -703,13 +720,24 @@ export function createAuthService(deps?: AuthServiceDeps) {
         tokenHash,
       });
 
-      return {
-        mailDelivery: {
-          configured: false,
-          provider: null,
+      let mailDelivery: MailDeliveryStatus;
+      try {
+        mailDelivery = await mailService.sendGuardianVerificationEmail({
+          to: user.email!,
+          displayName: user.displayName,
+          rawToken,
+        });
+      } catch {
+        mailDelivery = {
+          configured: mailConfigured,
+          provider: mailService.getProvider(),
           delivered: false,
           verificationState: 'pending_verification',
-        },
+        };
+      }
+
+      return {
+        mailDelivery,
       };
     },
 

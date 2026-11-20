@@ -13,8 +13,8 @@ import {
   unique,
   varchar,
 } from 'drizzle-orm/mysql-core';
-import { uuidChar36 } from './_shared';
-import { users } from './identity';
+import { uuidChar36 } from './_shared.ts';
+import { users } from './identity.ts';
 
 /**
  * 3.11 content_items (Platform-wide library; circular FK to content_versions via fk_content_items_pub_version)

@@ -1,9 +1,17 @@
-import { GraduationCap, HeartHandshake, ShieldCheck } from 'lucide-react';
-import { useState, type FormEvent } from 'react';
+import {
+  ArrowRight,
+  BookOpenCheck,
+  GraduationCap,
+  HeartHandshake,
+  Home,
+  Loader2,
+  ShieldCheck,
+} from 'lucide-react';
+import { useEffect, useState, type FormEvent } from 'react';
 import { ApiClientError, authApi } from '../../api/client.ts';
 import { useAuth } from '../../auth/AuthContext.tsx';
 import { getMessages, resolveLocalizedErrorMessage } from '../../i18n/index.ts';
-import type { ApiErrorInfo } from '../../types/auth.ts';
+import type { ApiErrorInfo, DemoPersona, MailDeliveryStatus } from '../../types/auth.ts';
 import {
   MimoraBrandMark,
   WelcomeGardenIllustration,
@@ -13,8 +21,24 @@ import { Alert, Button, Card, FormField, Input, PasswordInput, Tabs } from '../u
 type LoginMode = 'student' | 'guardian' | 'admin_teacher';
 type GuardianAuthView = 'login' | 'register' | 'verify';
 
-export function LoginPage() {
-  const { login, authNotice, clearAuthNotice, locale, setLocale } = useAuth();
+export interface LoginPageProps {
+  initialVerifyToken?: string | null;
+  onConsumeInitialVerifyToken?: () => void;
+}
+
+export function LoginPage({
+  initialVerifyToken,
+  onConsumeInitialVerifyToken,
+}: LoginPageProps) {
+  const {
+    login,
+    loginDemoPersona,
+    demoModeEnabled,
+    authNotice,
+    clearAuthNotice,
+    locale,
+    setLocale,
+  } = useAuth();
   const t = getMessages(locale);
 
   const [mode, setMode] = useState<LoginMode>('student');
@@ -32,9 +56,30 @@ export function LoginPage() {
 
   const [fieldError, setFieldError] = useState<string | null>(null);
   const [apiError, setApiError] = useState<ApiErrorInfo | null>(null);
+  const [demoError, setDemoError] = useState<ApiErrorInfo | null>(null);
   const [infoNotice, setInfoNotice] = useState<string | null>(null);
-  const [pendingMailUnconfigured, setPendingMailUnconfigured] = useState(false);
+  const [mailDeliveryStatus, setMailDeliveryStatus] = useState<MailDeliveryStatus | null>(null);
+  const [fromVerifyLink, setFromVerifyLink] = useState(false);
   const [submitting, setSubmitting] = useState(false);
+  const [pendingDemoPersona, setPendingDemoPersona] = useState<DemoPersona | null>(null);
+
+  const isBusy = submitting || pendingDemoPersona !== null;
+
+  useEffect(() => {
+    if (!initialVerifyToken) {
+      return;
+    }
+    setMode('guardian');
+    setGuardianView('verify');
+    setVerifyToken(initialVerifyToken);
+    setFromVerifyLink(true);
+    setMailDeliveryStatus(null);
+    setFieldError(null);
+    setApiError(null);
+    setInfoNotice(null);
+    clearAuthNotice();
+    onConsumeInitialVerifyToken?.();
+  }, [initialVerifyToken, onConsumeInitialVerifyToken, clearAuthNotice]);
 
   const handleModeChange = (nextMode: LoginMode) => {
     setMode(nextMode);
@@ -42,7 +87,8 @@ export function LoginPage() {
     setFieldError(null);
     setApiError(null);
     setInfoNotice(null);
-    setPendingMailUnconfigured(false);
+    setMailDeliveryStatus(null);
+    setFromVerifyLink(false);
     clearAuthNotice();
   };
 
@@ -54,10 +100,43 @@ export function LoginPage() {
     clearAuthNotice();
   };
 
-  const handleSubmit = async (event: FormEvent) => {
-    event.preventDefault();
+  const handleDemoAccess = async (persona: DemoPersona) => {
+    if (isBusy) {
+      return;
+    }
+    setDemoError(null);
     setFieldError(null);
     setApiError(null);
+    setInfoNotice(null);
+    clearAuthNotice();
+    setPendingDemoPersona(persona);
+    try {
+      await loginDemoPersona(persona);
+    } catch (err) {
+      if (err instanceof ApiClientError) {
+        setDemoError(err.info);
+      } else {
+        setDemoError({
+          httpStatus: 0,
+          code: 'UNKNOWN',
+          messageKey: 'error.unknown',
+          message: t.errors.UNKNOWN,
+          locale,
+        });
+      }
+    } finally {
+      setPendingDemoPersona(null);
+    }
+  };
+
+  const handleSubmit = async (event: FormEvent) => {
+    event.preventDefault();
+    if (isBusy) {
+      return;
+    }
+    setFieldError(null);
+    setApiError(null);
+    setDemoError(null);
     setInfoNotice(null);
     clearAuthNotice();
 
@@ -89,7 +168,8 @@ export function LoginPage() {
         });
         setPassword('');
         setConfirmPassword('');
-        setPendingMailUnconfigured(!res.mailDelivery.configured);
+        setMailDeliveryStatus(res.mailDelivery);
+        setFromVerifyLink(false);
         setGuardianView('verify');
         setInfoNotice(
           `Đã tạo tài khoản cho ${res.user.email ?? guardianEmail.trim()}. Tài khoản đang ở trạng thái chờ xác minh email.`
@@ -122,11 +202,18 @@ export function LoginPage() {
       try {
         await authApi.verifyGuardianEmail({ token: verifyToken.trim() });
         setVerifyToken('');
-        setPendingMailUnconfigured(false);
+        setMailDeliveryStatus(null);
+        setFromVerifyLink(false);
         setGuardianView('login');
         setInfoNotice(t.auth.guardianVerifySuccess);
       } catch (err) {
-        if (err instanceof ApiClientError) {
+        if (err instanceof ApiClientError && err.info.code === 'EMAIL_ALREADY_VERIFIED') {
+          setVerifyToken('');
+          setMailDeliveryStatus(null);
+          setFromVerifyLink(false);
+          setGuardianView('login');
+          setInfoNotice(t.auth.guardianAlreadyVerifiedNotice);
+        } else if (err instanceof ApiClientError) {
           setApiError(err.info);
         } else {
           setApiError({
@@ -234,25 +321,156 @@ export function LoginPage() {
       {/* Main Split Workspace */}
       <main className="flex-1 max-w-[1200px] w-full mx-auto px-4 sm:px-6 py-8 sm:py-12 flex items-center">
         <div className="w-full grid grid-cols-1 lg:grid-cols-12 gap-8 lg:gap-12 items-stretch">
-          {/* Warm Story/Product Welcome Column */}
-          <section className="lg:col-span-6 flex flex-col justify-between rounded-[var(--mimora-radius-xl)] bg-[var(--mimora-surface-mint)] border border-[#c3dfd8] p-6 sm:p-10 space-y-6">
-            <div className="space-y-4">
+          {/* Warm Story/Product Welcome & Optional Demo Quick Access Column */}
+          <section className="lg:col-span-6 flex flex-col justify-between rounded-[var(--mimora-radius-xl)] bg-[var(--mimora-surface-mint)] border border-[#c3dfd8] p-6 sm:p-8 space-y-5">
+            <div className="space-y-3">
               <p className="text-xs font-semibold text-[var(--mimora-primary)] tracking-wide">
                 {t.app.tagline}
               </p>
               <h1 className="text-3xl sm:text-4xl font-bold text-[var(--mimora-text)] tracking-tight leading-tight">
                 {t.auth.pageTitle}
               </h1>
-              <p className="text-base text-[var(--mimora-muted)] leading-relaxed max-w-md">
+              <p className="text-sm sm:text-base text-[var(--mimora-muted)] leading-relaxed max-w-lg">
                 {t.auth.pageSubtitle}
               </p>
             </div>
 
-            <div className="flex justify-center py-2">
-              <WelcomeGardenIllustration />
-            </div>
+            {demoModeEnabled ? (
+              <section
+                aria-labelledby="mimora-demo-access-heading"
+                className="rounded-[var(--mimora-radius-lg)] bg-[var(--mimora-surface)] border border-[#c3dfd8] p-4 sm:p-5 space-y-3.5 shadow-[var(--mimora-shadow-soft)]"
+              >
+                <div className="space-y-1">
+                  <p className="text-[11px] font-semibold uppercase tracking-wider text-[var(--mimora-primary)]">
+                    {t.auth.demoBadgeLabel}
+                  </p>
+                  <h2
+                    id="mimora-demo-access-heading"
+                    className="text-lg sm:text-xl font-bold text-[var(--mimora-text)] tracking-tight"
+                  >
+                    {t.auth.demoTitle}
+                  </h2>
+                  <p className="text-xs sm:text-sm text-[var(--mimora-muted)] leading-relaxed">
+                    {t.auth.demoSubtitle}
+                  </p>
+                </div>
 
-            <div className="pt-4 border-t border-[#c3dfd8] text-xs text-[var(--mimora-muted)] flex flex-wrap items-center gap-x-2 gap-y-1">
+                {demoError && (
+                  <Alert
+                    variant={
+                      demoError.httpStatus === 429 || demoError.httpStatus === 503
+                        ? 'warning'
+                        : 'danger'
+                    }
+                  >
+                    <p>{resolveLocalizedErrorMessage(demoError, locale)}</p>
+                    {demoError.code && (
+                      <p className="mt-1 font-mono text-xs text-[var(--mimora-muted)]">
+                        {demoError.code}
+                        {demoError.httpStatus > 0 ? ` · HTTP ${demoError.httpStatus}` : ''}
+                      </p>
+                    )}
+                  </Alert>
+                )}
+
+                <div className="grid grid-cols-1 gap-2.5" role="group" aria-labelledby="mimora-demo-access-heading">
+                  {(
+                    [
+                      {
+                        persona: 'admin',
+                        label: t.auth.demoRoles.admin.label,
+                        description: t.auth.demoRoles.admin.description,
+                        icon: ShieldCheck,
+                        iconBoxClass: 'bg-[var(--mimora-surface-lavender)] text-[var(--mimora-secondary)]',
+                      },
+                      {
+                        persona: 'teacher',
+                        label: t.auth.demoRoles.teacher.label,
+                        description: t.auth.demoRoles.teacher.description,
+                        icon: BookOpenCheck,
+                        iconBoxClass: 'bg-[var(--mimora-surface-mint)] text-[var(--mimora-primary)]',
+                      },
+                      {
+                        persona: 'guardian',
+                        label: t.auth.demoRoles.guardian.label,
+                        description: t.auth.demoRoles.guardian.description,
+                        icon: HeartHandshake,
+                        iconBoxClass: 'bg-[var(--mimora-surface-peach)] text-[var(--mimora-accent)]',
+                      },
+                      {
+                        persona: 'student_school',
+                        label: t.auth.demoRoles.student_school.label,
+                        description: t.auth.demoRoles.student_school.description,
+                        icon: GraduationCap,
+                        iconBoxClass: 'bg-[var(--mimora-surface-butter)] text-[#7d5108]',
+                      },
+                      {
+                        persona: 'student_family',
+                        label: t.auth.demoRoles.student_family.label,
+                        description: t.auth.demoRoles.student_family.description,
+                        icon: Home,
+                        iconBoxClass: 'bg-[var(--mimora-surface-subtle)] text-[var(--mimora-text)]',
+                      },
+                    ] as const
+                  ).map((item) => {
+                    const Icon = item.icon;
+                    const isLoadingThis = pendingDemoPersona === item.persona;
+                    return (
+                      <button
+                        key={item.persona}
+                        type="button"
+                        data-testid={`demo-login-${item.persona}`}
+                        disabled={isBusy}
+                        aria-busy={isLoadingThis || undefined}
+                        onClick={() => void handleDemoAccess(item.persona)}
+                        className={[
+                          'group w-full min-h-[54px] flex items-center justify-between gap-3 rounded-[var(--mimora-radius-md)] border px-3.5 py-2.5 text-left',
+                          'transition-[background-color,border-color,transform] duration-150 ease-out cursor-pointer',
+                          'disabled:opacity-55 disabled:cursor-not-allowed disabled:transform-none',
+                          isLoadingThis
+                            ? 'border-[var(--mimora-primary)] bg-[var(--mimora-surface-mint)]'
+                            : 'border-[var(--mimora-border)] bg-[var(--mimora-surface)] hover:border-[var(--mimora-primary)] hover:bg-[var(--mimora-surface-mint)] active:translate-y-px',
+                        ].join(' ')}
+                      >
+                        <span className="flex items-center gap-3 min-w-0">
+                          <span
+                            className={`h-9 w-9 rounded-[var(--mimora-radius-sm)] flex items-center justify-center shrink-0 ${item.iconBoxClass}`}
+                            aria-hidden="true"
+                          >
+                            <Icon className="h-4 w-4" />
+                          </span>
+                          <span className="min-w-0">
+                            <span className="block text-sm font-semibold text-[var(--mimora-text)] leading-snug">
+                              {item.label}
+                            </span>
+                            <span className="block text-xs text-[var(--mimora-muted)] leading-snug mt-0.5">
+                              {item.description}
+                            </span>
+                          </span>
+                        </span>
+                        {isLoadingThis ? (
+                          <Loader2
+                            className="h-4 w-4 animate-spin text-[var(--mimora-primary)] shrink-0"
+                            aria-hidden="true"
+                          />
+                        ) : (
+                          <ArrowRight
+                            className="h-4 w-4 text-[var(--mimora-muted)] group-hover:text-[var(--mimora-primary)] transition-transform duration-150 group-hover:translate-x-0.5 shrink-0"
+                            aria-hidden="true"
+                          />
+                        )}
+                      </button>
+                    );
+                  })}
+                </div>
+              </section>
+            ) : (
+              <div className="flex justify-center py-2">
+                <WelcomeGardenIllustration />
+              </div>
+            )}
+
+            <div className="pt-3 border-t border-[#c3dfd8] text-xs text-[var(--mimora-muted)] flex flex-wrap items-center gap-x-2 gap-y-1">
               <span>{t.student.calmStatusLabel}</span>
             </div>
           </section>
@@ -322,7 +540,7 @@ export function LoginPage() {
                         value={organizationCode}
                         onChange={(e) => setOrganizationCode(e.target.value)}
                         placeholder={t.auth.orgCodePlaceholder}
-                        disabled={submitting}
+                        disabled={isBusy}
                         hasError={Boolean(fieldError && !organizationCode.trim())}
                       />
                     </FormField>
@@ -339,7 +557,7 @@ export function LoginPage() {
                         value={orgUsername}
                         onChange={(e) => setOrgUsername(e.target.value)}
                         placeholder={t.auth.orgUsernamePlaceholder}
-                        disabled={submitting}
+                        disabled={isBusy}
                         hasError={Boolean(fieldError && !orgUsername.trim())}
                       />
                     </FormField>
@@ -354,7 +572,7 @@ export function LoginPage() {
                         placeholder={t.auth.passwordPlaceholder}
                         showLabel={t.auth.showPassword}
                         hideLabel={t.auth.hidePassword}
-                        disabled={submitting}
+                        disabled={isBusy}
                         hasError={Boolean(fieldError && !password)}
                       />
                     </FormField>
@@ -366,6 +584,7 @@ export function LoginPage() {
                         size="student"
                         fullWidth
                         loading={submitting}
+                        disabled={pendingDemoPersona !== null}
                       >
                         {submitting ? t.auth.submittingLogin : t.auth.submitLogin}
                       </Button>
@@ -388,7 +607,7 @@ export function LoginPage() {
                         value={guardianEmail}
                         onChange={(e) => setGuardianEmail(e.target.value)}
                         placeholder={t.auth.guardianEmailPlaceholder}
-                        disabled={submitting}
+                        disabled={isBusy}
                         hasError={Boolean(fieldError && !guardianEmail.trim())}
                       />
                     </FormField>
@@ -403,7 +622,7 @@ export function LoginPage() {
                         placeholder={t.auth.passwordPlaceholder}
                         showLabel={t.auth.showPassword}
                         hideLabel={t.auth.hidePassword}
-                        disabled={submitting}
+                        disabled={isBusy}
                         hasError={Boolean(fieldError && !password)}
                       />
                     </FormField>
@@ -415,6 +634,7 @@ export function LoginPage() {
                         size="lg"
                         fullWidth
                         loading={submitting}
+                        disabled={pendingDemoPersona !== null}
                       >
                         {submitting ? t.auth.submittingLogin : t.auth.submitLogin}
                       </Button>
@@ -429,10 +649,14 @@ export function LoginPage() {
                         </button>
                         <button
                           type="button"
-                          onClick={() => switchGuardianView('verify')}
+                          onClick={() => {
+                            setMailDeliveryStatus(null);
+                            setFromVerifyLink(false);
+                            switchGuardianView('verify');
+                          }}
                           className="text-[var(--mimora-muted)] hover:text-[var(--mimora-text)] hover:underline cursor-pointer"
                         >
-                          Đã có mã xác minh email?
+                          Đã có liên kết / token xác minh email?
                         </button>
                       </div>
                     </div>
@@ -457,7 +681,7 @@ export function LoginPage() {
                         value={guardianDisplayName}
                         onChange={(e) => setGuardianDisplayName(e.target.value)}
                         placeholder={t.auth.guardianDisplayNamePlaceholder}
-                        disabled={submitting}
+                        disabled={isBusy}
                       />
                     </FormField>
 
@@ -474,7 +698,7 @@ export function LoginPage() {
                         value={guardianEmail}
                         onChange={(e) => setGuardianEmail(e.target.value)}
                         placeholder={t.auth.guardianEmailPlaceholder}
-                        disabled={submitting}
+                        disabled={isBusy}
                       />
                     </FormField>
 
@@ -493,7 +717,7 @@ export function LoginPage() {
                         placeholder={t.auth.passwordPlaceholder}
                         showLabel={t.auth.showPassword}
                         hideLabel={t.auth.hidePassword}
-                        disabled={submitting}
+                        disabled={isBusy}
                       />
                     </FormField>
 
@@ -511,7 +735,7 @@ export function LoginPage() {
                         placeholder={t.auth.confirmPasswordLabel}
                         showLabel={t.auth.showPassword}
                         hideLabel={t.auth.hidePassword}
-                        disabled={submitting}
+                        disabled={isBusy}
                       />
                     </FormField>
 
@@ -522,6 +746,7 @@ export function LoginPage() {
                         size="lg"
                         fullWidth
                         loading={submitting}
+                        disabled={pendingDemoPersona !== null}
                       >
                         {submitting
                           ? t.auth.guardianRegisterSubmitting
@@ -543,14 +768,42 @@ export function LoginPage() {
 
                 {mode === 'guardian' && guardianView === 'verify' && (
                   <>
-                    <Alert variant="info" title={t.auth.guardianVerifyTitle}>
-                      <p className="leading-relaxed">{t.auth.guardianVerifyNotice}</p>
-                      {pendingMailUnconfigured && (
-                        <p className="mt-1.5 text-xs text-[var(--mimora-muted)]">
-                          Trạng thái máy chủ thư: Chưa cấu hình SMTP (pending_verification).
-                        </p>
-                      )}
-                    </Alert>
+                    {fromVerifyLink ? (
+                      <Alert variant="info" title={t.auth.guardianVerifyTitle}>
+                        <p className="leading-relaxed">{t.auth.guardianVerifyLinkNotice}</p>
+                      </Alert>
+                    ) : mailDeliveryStatus ? (
+                      <Alert
+                        variant={
+                          mailDeliveryStatus.configured && mailDeliveryStatus.delivered
+                            ? 'success'
+                            : 'warning'
+                        }
+                        title={t.auth.guardianVerifyTitle}
+                      >
+                        {!mailDeliveryStatus.configured ? (
+                          <p className="leading-relaxed">{t.auth.mailStatusUnconfigured}</p>
+                        ) : mailDeliveryStatus.delivered ? (
+                          <div className="space-y-1.5">
+                            <p className="leading-relaxed">{t.auth.mailStatusDelivered}</p>
+                            <p className="text-xs text-[var(--mimora-muted)] leading-relaxed">
+                              {t.auth.guardianVerifyNotice}
+                            </p>
+                          </div>
+                        ) : (
+                          <div className="space-y-1.5">
+                            <p className="leading-relaxed">{t.auth.mailStatusFailed}</p>
+                            <p className="text-xs text-[var(--mimora-muted)] leading-relaxed">
+                              {t.auth.guardianVerifyResendLoginHint}
+                            </p>
+                          </div>
+                        )}
+                      </Alert>
+                    ) : (
+                      <Alert variant="info" title={t.auth.guardianVerifyTitle}>
+                        <p className="leading-relaxed">{t.auth.guardianVerifyNotice}</p>
+                      </Alert>
+                    )}
 
                     <FormField
                       label={t.auth.guardianVerifyTokenLabel}
@@ -563,7 +816,7 @@ export function LoginPage() {
                         value={verifyToken}
                         onChange={(e) => setVerifyToken(e.target.value)}
                         placeholder={t.auth.guardianVerifyTokenPlaceholder}
-                        disabled={submitting}
+                        disabled={isBusy}
                         className="font-mono"
                       />
                     </FormField>
@@ -575,6 +828,7 @@ export function LoginPage() {
                         size="lg"
                         fullWidth
                         loading={submitting}
+                        disabled={pendingDemoPersona !== null}
                       >
                         {t.auth.guardianVerifySubmit}
                       </Button>
@@ -606,7 +860,7 @@ export function LoginPage() {
                         value={identifier}
                         onChange={(e) => setIdentifier(e.target.value)}
                         placeholder={t.auth.identifierPlaceholder}
-                        disabled={submitting}
+                        disabled={isBusy}
                         hasError={Boolean(fieldError && !identifier.trim())}
                       />
                     </FormField>
@@ -621,7 +875,7 @@ export function LoginPage() {
                         placeholder={t.auth.passwordPlaceholder}
                         showLabel={t.auth.showPassword}
                         hideLabel={t.auth.hidePassword}
-                        disabled={submitting}
+                        disabled={isBusy}
                         hasError={Boolean(fieldError && !password)}
                       />
                     </FormField>
@@ -633,6 +887,7 @@ export function LoginPage() {
                         size="lg"
                         fullWidth
                         loading={submitting}
+                        disabled={pendingDemoPersona !== null}
                       >
                         {submitting ? t.auth.submittingLogin : t.auth.submitLogin}
                       </Button>

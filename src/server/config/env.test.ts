@@ -133,3 +133,83 @@ test('parseServerConfig enforces production COOKIE_SECURE, TRUSTED_ORIGINS, scry
     /Invalid server configuration/
   );
 });
+
+test('parseServerConfig resolves APP_URL alias in TRUSTED_ORIGINS only when APP_URL is valid', () => {
+  const resolved = parseServerConfig({
+    APP_URL: 'https://ais-dev.example.run.app/callback',
+    TRUSTED_ORIGINS: 'APP_URL, https://ais-pre.example.run.app',
+  });
+  assert.deepEqual(resolved.auth.trustedOrigins, [
+    'https://ais-dev.example.run.app',
+    'https://ais-pre.example.run.app',
+  ]);
+
+  assert.throws(
+    () =>
+      parseServerConfig({
+        TRUSTED_ORIGINS: 'APP_URL',
+      }),
+    /Invalid server configuration/
+  );
+});
+
+test('parseServerConfig handles MAIL_PROVIDER unset vs resend with strict required fields and no secret leakage', () => {
+  const unconfigured = parseServerConfig({});
+  assert.deepEqual(unconfigured.mail, { provider: null });
+
+  const configured = parseServerConfig({
+    MAIL_PROVIDER: 'Resend',
+    RESEND_API_KEY: 're_test_key_value_123456',
+    MAIL_FROM: 'MIMORA <no-reply@mimora.vn>',
+    APP_URL: 'https://mimora.vn',
+  });
+  assert.deepEqual(configured.mail, {
+    provider: 'resend',
+    resendApiKey: 're_test_key_value_123456',
+    mailFrom: 'MIMORA <no-reply@mimora.vn>',
+  });
+
+  // Missing RESEND_API_KEY or MAIL_FROM when MAIL_PROVIDER=resend fails safely
+  assert.throws(
+    () =>
+      parseServerConfig({
+        MAIL_PROVIDER: 'resend',
+        MAIL_FROM: 'no-reply@mimora.vn',
+      }),
+    /RESEND_API_KEY/
+  );
+
+  assert.throws(
+    () =>
+      parseServerConfig({
+        MAIL_PROVIDER: 'resend',
+        RESEND_API_KEY: 're_secret_should_not_leak_999',
+      }),
+    (err: unknown) => {
+      assert.ok(err instanceof Error);
+      assert.match(err.message, /MAIL_FROM/);
+      assert.equal(err.message.includes('re_secret_should_not_leak_999'), false);
+      return true;
+    }
+  );
+
+  assert.throws(
+    () =>
+      parseServerConfig({
+        MAIL_PROVIDER: 'resend',
+        RESEND_API_KEY: 're_test_key',
+        MAIL_FROM: 'not-an-email',
+      }),
+    /MAIL_FROM/
+  );
+
+  assert.throws(
+    () =>
+      parseServerConfig({
+        MAIL_PROVIDER: 'smtp',
+      }),
+    /MAIL_PROVIDER/
+  );
+});
+
+

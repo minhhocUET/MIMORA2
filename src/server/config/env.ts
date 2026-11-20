@@ -33,6 +33,14 @@ export interface CsvImportConfig {
   maxRows: number;
 }
 
+export type MailProvider = 'resend';
+
+export interface MailConfig {
+  provider: MailProvider | null;
+  resendApiKey?: string;
+  mailFrom?: string;
+}
+
 export interface ServerConfig {
   nodeEnv: NodeEnvironment;
   port: number;
@@ -43,6 +51,8 @@ export interface ServerConfig {
   cookie: CookieConfig;
   auth: AuthSecurityConfig;
   csv: CsvImportConfig;
+  mail: MailConfig;
+  demoMode: boolean;
 }
 
 const booleanStringSchema = z
@@ -78,6 +88,28 @@ function parseExactOrigin(rawValue: string): string | null {
   } catch {
     return null;
   }
+}
+
+function resolveTrustedOriginEntry(rawValue: string, appUrl?: string): string | null {
+  const trimmed = rawValue.trim();
+  if (!trimmed) {
+    return null;
+  }
+  if (trimmed === 'APP_URL' || trimmed === '$APP_URL' || trimmed === '${APP_URL}') {
+    if (!appUrl) {
+      return null;
+    }
+    try {
+      const parsed = new URL(appUrl);
+      if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
+        return null;
+      }
+      return parsed.origin;
+    } catch {
+      return null;
+    }
+  }
+  return parseExactOrigin(trimmed);
 }
 
 function parseOptionalPositiveInt(
@@ -117,6 +149,10 @@ const rawServerEnvSchema = z
     LOCKOUT_DURATION_MINUTES: z.string().optional(),
     CSV_MAX_BYTES: z.string().optional(),
     CSV_MAX_ROWS: z.string().optional(),
+    MAIL_PROVIDER: z.string().trim().optional(),
+    RESEND_API_KEY: z.string().optional(),
+    MAIL_FROM: z.string().trim().optional(),
+    MIMORA_DEMO_MODE: z.string().optional(),
   })
   .superRefine((env, ctx) => {
     const nodeEnv = env.NODE_ENV ?? 'development';
@@ -220,7 +256,7 @@ const rawServerEnvSchema = z
         .map((s) => s.trim())
         .filter((s) => s.length > 0);
       for (const entry of entries) {
-        if (!parseExactOrigin(entry)) {
+        if (!resolveTrustedOriginEntry(entry, env.APP_URL)) {
           ctx.addIssue({
             code: 'custom',
             path: ['TRUSTED_ORIGINS'],
@@ -262,6 +298,50 @@ const rawServerEnvSchema = z
         message: 'Lockout max attempts and lockout duration must be configured together.',
       });
     }
+
+    const rawMailProvider = env.MAIL_PROVIDER?.trim().toLowerCase() ?? '';
+    if (rawMailProvider.length > 0 && rawMailProvider !== 'resend') {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['MAIL_PROVIDER'],
+        message: 'MAIL_PROVIDER must be "resend" when specified.',
+      });
+    }
+
+    if (rawMailProvider === 'resend') {
+      const apiKey = env.RESEND_API_KEY?.trim() ?? '';
+      if (!apiKey || /[\r\n\s]/.test(apiKey)) {
+        ctx.addIssue({
+          code: 'custom',
+          path: ['RESEND_API_KEY'],
+          message: 'RESEND_API_KEY is required when MAIL_PROVIDER is "resend".',
+        });
+      }
+
+      const mailFrom = env.MAIL_FROM?.trim() ?? '';
+      const validMailbox =
+        /^([^\s<>@]+@[^\s<>@]+\.[^\s<>@]+|[^<>\r\n]+<[^\s<>@]+@[^\s<>@]+\.[^\s<>@]+>)$/.test(
+          mailFrom
+        );
+      if (!mailFrom || /[\r\n]/.test(mailFrom) || !validMailbox) {
+        ctx.addIssue({
+          code: 'custom',
+          path: ['MAIL_FROM'],
+          message: 'MAIL_FROM must be a valid sender address when MAIL_PROVIDER is "resend".',
+        });
+      }
+    }
+
+    if (env.MIMORA_DEMO_MODE !== undefined && env.MIMORA_DEMO_MODE.trim().length > 0) {
+      const parsedDemoMode = booleanStringSchema.safeParse(env.MIMORA_DEMO_MODE);
+      if (!parsedDemoMode.success) {
+        ctx.addIssue({
+          code: 'custom',
+          path: ['MIMORA_DEMO_MODE'],
+          message: 'MIMORA_DEMO_MODE must be "true" or "false".',
+        });
+      }
+    }
   });
 
 export function parseServerConfig(envSource: NodeJS.ProcessEnv = process.env): ServerConfig {
@@ -284,6 +364,10 @@ export function parseServerConfig(envSource: NodeJS.ProcessEnv = process.env): S
     LOCKOUT_DURATION_MINUTES: envSource.LOCKOUT_DURATION_MINUTES,
     CSV_MAX_BYTES: envSource.CSV_MAX_BYTES,
     CSV_MAX_ROWS: envSource.CSV_MAX_ROWS,
+    MAIL_PROVIDER: envSource.MAIL_PROVIDER,
+    RESEND_API_KEY: envSource.RESEND_API_KEY,
+    MAIL_FROM: envSource.MAIL_FROM,
+    MIMORA_DEMO_MODE: envSource.MIMORA_DEMO_MODE,
   });
 
   if (!parsed.success) {
@@ -319,7 +403,7 @@ export function parseServerConfig(envSource: NodeJS.ProcessEnv = process.env): S
   }
   if (data.TRUSTED_ORIGINS) {
     for (const rawEntry of data.TRUSTED_ORIGINS.split(',')) {
-      const origin = parseExactOrigin(rawEntry);
+      const origin = resolveTrustedOriginEntry(rawEntry, appUrl);
       if (origin) {
         trustedOriginSet.add(origin);
       }
@@ -366,6 +450,20 @@ export function parseServerConfig(envSource: NodeJS.ProcessEnv = process.env): S
       maxRows:
         parseOptionalPositiveInt(data.CSV_MAX_ROWS, 5_000).value ?? 500,
     },
+    mail:
+      data.MAIL_PROVIDER && data.MAIL_PROVIDER.trim().toLowerCase() === 'resend'
+        ? {
+            provider: 'resend',
+            resendApiKey: data.RESEND_API_KEY!.trim(),
+            mailFrom: data.MAIL_FROM!.trim(),
+          }
+        : {
+            provider: null,
+          },
+    demoMode:
+      data.MIMORA_DEMO_MODE !== undefined && data.MIMORA_DEMO_MODE.trim().length > 0
+        ? booleanStringSchema.parse(data.MIMORA_DEMO_MODE)
+        : false,
   };
 }
 

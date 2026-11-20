@@ -4,6 +4,22 @@ Mọi thay đổi kỹ thuật và quyết định kiến trúc có bằng chứ
 
 ---
 
+## [P4-02.1B] — 2026-11-19
+**Mục tiêu:** Khắc phục xung đột cổng `8080` trong môi trường reverse-proxy AI Studio (`nginx :8080 -> Node :3000`), giải quyết lỗi khởi động do `TRUSTED_ORIGINS="APP_URL"`, và kiểm chứng read-only Runtime TiDB Secrets cùng kết nối TiDB thật (KHÔNG sửa Nginx/auth/CSRF logic, KHÔNG chạy migration/DDL/DML, KHÔNG khôi phục `TIDB_MIGRATOR_*`).
+
+- **Nội dung thay đổi & bằng chứng kiểm tra (`PASS`):**
+  - `package.json`: Đổi `"dev": "tsx server.ts"` thành `"dev": "tsx server.ts --port=3000"` để `server.ts` luôn chọn cổng `3000` qua `cliArgs.port ?? serverConfig.port` ngay cả khi kế thừa `PORT=8080` của Cloud Run/Nginx.
+  - `src/server/config/env.ts` & `src/server/config/env.test.ts`: Bổ sung `resolveTrustedOriginEntry()` cho phép phân giải alias `APP_URL` (`$APP_URL`, `${APP_URL}`) trong `TRUSTED_ORIGINS` sang exact origin của `APP_URL` khi `APP_URL` hợp lệ (từ chối khi thiếu `APP_URL` và giữ chặt từ chối wildcard/path/query/chuỗi tùy ý). Bộ test `env.test.ts` + `tidb.test.ts`: `12 pass, 0 fail, 1 skip` (skip trong shell vì shell không chứa `TIDB_*`).
+  - **Xác minh 3 lớp môi trường & Health checks sau `restart_dev_server`:**
+    - **Shell (`run_command`), `PID 1` (`/bin/bash ./start.sh`), `PID 6` (`control-plane-api`):** không có 5 biến `TIDB_*`, `PORT=8080`, `DEFAULT_APP_PORT=3000`, `MIMORA_DB_MODE=UNSET`.
+    - **Managed Node.js process (`0.0.0.0:3000`, `PID 1021` thuộc cây `control-plane-api`):** xác nhận có đủ `TIDB_HOST`, `TIDB_PORT`, `TIDB_USER`, `TIDB_PASSWORD`, `TIDB_DATABASE` (`present=true, nonEmpty=true`), `MIMORA_DB_MODE="tidb"`, `PORT="3000"`, `HOST="0.0.0.0"`, `DISABLE_HMR="true"`, `COOKIE_SECURE="true"`, `COOKIE_SAMESITE="lax"`, `SESSION_COOKIE_NAME="mimora_session"`, `AUTH_CSRF_SECRET` (`>= 16` chars), và không có `TIDB_MIGRATOR_USER` / `TIDB_MIGRATOR_PASSWORD`.
+    - **Health checks (`:3000` trực tiếp & `:8080` qua Nginx):** `/api/v1/health` trả `HTTP 200 {"status":"ok","service":"mimora-api"}`; `/api/v1/db/health` trả `HTTP 200 {"status":"ok","database":"connected","mode":"tidb","durablePersistence":true,"orm":"drizzle","driver":"mysql2","tls":"required-min-v1.2-verified","serverVersion":"8.0.11-TiDB-v8.5.3-serverless"}`.
+    - **Read-only TiDB SQL verification:** `VERSION() = "8.0.11-TiDB-v8.5.3-serverless"`, `DATABASE() = "test"`, `CURRENT_USER() = "3rtMqHg6yoxMH5d.mimora_runtime@%"`, `Ssl_version = "TLSv1.3"`, `SHOW GRANTS` chỉ có `USAGE ON *.*` + `SELECT,INSERT,UPDATE,DELETE ON test.*`.
+- **Files / modules affected:**
+  - `package.json`, `src/server/config/env.ts`, `src/server/config/env.test.ts`, `project-docs/{ARCHITECTURE,PROJECT_STATE,KNOWN_ISSUES,CHANGELOG}.md`
+
+---
+
 ## [KI-12] — 2026-11-19
 **Mục tiêu:** Đồng bộ hóa hành vi giữa School Attempt Engine (`attempt.service.ts`) và Family Attempt Engine (`family-learning.service.ts`) thông qua bộ helper thuần dùng chung, giữ nguyên tách biệt bảng TiDB, mô hình phân quyền và khả năng học độc lập Teacher-free của Family-only Student (KHÔNG sửa DB schema/migrations, KHÔNG thực thi DDL/DML, dừng trước `P4-03`).
 

@@ -1,3 +1,4 @@
+import { useEffect, useState } from 'react';
 import { AuthProvider, useAuth } from './auth/AuthContext.tsx';
 import { LoginPage } from './components/auth/LoginPage.tsx';
 import { OrgSelectionScreen } from './components/auth/OrgSelectionScreen.tsx';
@@ -8,10 +9,21 @@ import { AdminLayout } from './layouts/AdminLayout.tsx';
 import { GuardianLayout } from './layouts/GuardianLayout.tsx';
 import { StudentLayout } from './layouts/StudentLayout.tsx';
 import { TeacherLayout } from './layouts/TeacherLayout.tsx';
+import { extractAndCleanVerifyToken } from './utils/verification-link.ts';
 
 function AppRouter() {
   const { status, context, resolvedRole, locale } = useAuth();
   const t = getMessages(locale);
+  const [pendingVerifyToken, setPendingVerifyToken] = useState<string | null>(null);
+
+  useEffect(() => {
+    const extracted = extractAndCleanVerifyToken();
+    if (extracted) {
+      setPendingVerifyToken(extracted);
+    }
+  }, []);
+
+  const clearPendingVerifyToken = () => setPendingVerifyToken(null);
 
   if (status === 'restoring') {
     return (
@@ -26,7 +38,12 @@ function AppRouter() {
   }
 
   if (status === 'unauthenticated' || !context) {
-    return <LoginPage />;
+    return (
+      <LoginPage
+        initialVerifyToken={pendingVerifyToken}
+        onConsumeInitialVerifyToken={clearPendingVerifyToken}
+      />
+    );
   }
 
   if (
@@ -41,7 +58,12 @@ function AppRouter() {
   }
 
   if (resolvedRole === 'guardian') {
-    return <GuardianLayout />;
+    return (
+      <GuardianLayout
+        initialVerifyToken={pendingVerifyToken}
+        onConsumeInitialVerifyToken={clearPendingVerifyToken}
+      />
+    );
   }
 
   if (resolvedRole === 'teacher') {
@@ -52,7 +74,12 @@ function AppRouter() {
     return <StudentLayout />;
   }
 
-  return <LoginPage />;
+  return (
+    <LoginPage
+      initialVerifyToken={pendingVerifyToken}
+      onConsumeInitialVerifyToken={clearPendingVerifyToken}
+    />
+  );
 }
 
 export default function App() {

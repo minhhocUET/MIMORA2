@@ -46,8 +46,12 @@ function makeAuthValue(context: AuthContextPayload | null): AuthContextValue {
     locale: 'vi-VN',
     setLocale: () => {},
     authNotice: null,
+    demoModeEnabled: false,
     clearAuthNotice: () => {},
     login: async () => {
+      throw new Error('not called in SSR test');
+    },
+    loginDemoPersona: async () => {
       throw new Error('not called in SSR test');
     },
     logout: async () => {},

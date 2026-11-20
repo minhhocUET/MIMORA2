@@ -1,6 +1,7 @@
 import express, { type NextFunction, type Request, type Response } from 'express';
+import fs from 'node:fs';
 import http from 'node:http';
-import { createServer as createViteServer } from 'vite';
+import path from 'node:path';
 import { getServerConfig } from './src/server/config/env.ts';
 import { checkTiDbHealth, closeTiDbPool } from './src/server/db/tidb.ts';
 import { ApiErrors, toApiErrorEnvelope } from './src/server/http/errors.ts';
@@ -18,6 +19,7 @@ import { createAssignmentsRouters } from './src/server/routes/assignments.routes
 import { createAttemptsRouters } from './src/server/routes/attempts.routes.ts';
 import { createAuthRouter } from './src/server/routes/auth.routes.ts';
 import { createClassesRouters } from './src/server/routes/classes.routes.ts';
+import { createDemoRouter } from './src/server/routes/demo.routes.ts';
 import { createFamilyLearningRouters } from './src/server/routes/family-learning.routes.ts';
 import { createGoalsRouters } from './src/server/routes/goals.routes.ts';
 import { createGuardianRouters } from './src/server/routes/guardian.routes.ts';
@@ -94,6 +96,7 @@ async function startServer() {
     res.status(200).json({
       status: 'ok',
       service: 'mimora-api',
+      demoAccessEnabled: serverConfig.demoMode,
     });
   });
 
@@ -189,6 +192,9 @@ async function startServer() {
     });
 
   app.use('/api/v1/auth', createAuthRouter());
+  if (serverConfig.demoMode) {
+    app.use('/api/v1/demo', createDemoRouter());
+  }
 
   const { adminClassesRouter, teacherClassesRouter } = createClassesRouters();
   const { teacherAssignmentsRouter, studentAssignmentsRouter } =
@@ -232,19 +238,42 @@ async function startServer() {
   app.use('/api', apiNotFoundHandler);
   app.use('/api', apiErrorHandler);
 
-  const vite = await createViteServer({
-    server: {
-      middlewareMode: true,
-      hmr: process.env.DISABLE_HMR === 'true' ? false : { server: httpServer },
-    },
-    appType: 'spa',
-  });
+  const isProduction = serverConfig.nodeEnv === 'production';
+  let vite: Awaited<ReturnType<(typeof import('vite'))['createServer']>> | null = null;
 
-  app.use(vite.middlewares);
+  if (isProduction) {
+    const distDir = path.resolve(process.cwd(), 'dist');
+    const indexHtmlPath = path.join(distDir, 'index.html');
+    if (!fs.existsSync(indexHtmlPath)) {
+      throw new Error(
+        `[mimora-api] Missing production client build at ${indexHtmlPath}. Run "npm run build" before starting in production.`
+      );
+    }
+
+    app.use(express.static(distDir, { index: false }));
+    app.get('*', (req: Request, res: Response, next: NextFunction) => {
+      if (req.path.startsWith('/api') || req.path.startsWith('/assets/')) {
+        next();
+        return;
+      }
+      res.sendFile(indexHtmlPath);
+    });
+  } else {
+    const { createServer: createViteServer } = await import('vite');
+    vite = await createViteServer({
+      server: {
+        middlewareMode: true,
+        hmr: process.env.DISABLE_HMR === 'true' ? false : { server: httpServer },
+      },
+      appType: 'spa',
+    });
+
+    app.use(vite.middlewares);
+  }
 
   app.use((err: unknown, _req: Request, res: Response, next: NextFunction) => {
     if (err instanceof Error) {
-      vite.ssrFixStacktrace(err);
+      vite?.ssrFixStacktrace(err);
       console.error(`[express-vite-error] name=${err.name} requestId=${getRequestId(res) ?? 'none'}`);
     } else {
       console.error(`[express-vite-error] requestId=${getRequestId(res) ?? 'none'}`);
@@ -272,10 +301,12 @@ async function startServer() {
     } catch (dbCloseErr) {
       console.error('[mimora-api] Error closing TiDB pool:', dbCloseErr);
     }
-    try {
-      await vite.close();
-    } catch (closeErr) {
-      console.error('[mimora-api] Error closing Vite server:', closeErr);
+    if (vite) {
+      try {
+        await vite.close();
+      } catch (closeErr) {
+        console.error('[mimora-api] Error closing Vite server:', closeErr);
+      }
     }
     httpServer.close((serverErr) => {
       if (serverErr) {
@@ -295,8 +326,9 @@ async function startServer() {
 
   await new Promise<void>((resolve) => {
     httpServer.listen(port, host, () => {
+      const modeLabel = isProduction ? 'production static dist/' : 'Vite middleware';
       console.log(
-        `[mimora-api] Express + Vite middleware listening on http://${host}:${port} (argv=${JSON.stringify(process.argv.slice(2))})`
+        `[mimora-api] Express (${modeLabel}) listening on http://${host}:${port} (argv=${JSON.stringify(process.argv.slice(2))})`
       );
       resolve();
     });

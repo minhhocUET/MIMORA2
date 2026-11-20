@@ -11,10 +11,10 @@ import {
   unique,
   varchar,
 } from 'drizzle-orm/mysql-core';
-import { uuidChar36 } from './_shared';
-import { classes } from './classes';
-import { contentVersions } from './content';
-import { organizationMemberships } from './identity';
+import { uuidChar36 } from './_shared.ts';
+import { classes } from './classes.ts';
+import { contentVersions } from './content.ts';
+import { organizationMemberships } from './identity.ts';
 
 /**
  * 3.14 assignments

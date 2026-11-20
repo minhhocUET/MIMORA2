@@ -6,8 +6,8 @@ import {
   mysqlTable,
   varchar,
 } from 'drizzle-orm/mysql-core';
-import { uuidChar36 } from './_shared';
-import { organizations, users } from './identity';
+import { uuidChar36 } from './_shared.ts';
+import { organizations, users } from './identity.ts';
 
 /**
  * 3.22 audit_logs (Append-only operational & security audit trail)

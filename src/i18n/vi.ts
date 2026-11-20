@@ -32,11 +32,22 @@ export const viMessages = {
     guardianRegisterSubmitting: 'Đang tạo tài khoản...',
     guardianVerifyTitle: 'Xác minh email người giám hộ',
     guardianVerifyNotice:
-      'Tài khoản đang ở trạng thái chờ xác minh email. Hệ thống hiện chưa kết nối dịch vụ gửi email tự động nên chưa thể gửi thư tới hộp thư của bạn.',
-    guardianVerifyTokenLabel: 'Mã xác minh email',
-    guardianVerifyTokenPlaceholder: 'Nhập mã xác minh từ quản trị hoặc hệ thống thư (nếu đã cấu hình)',
+      'Tài khoản đang ở trạng thái chờ xác minh email. Hãy bấm trực tiếp vào liên kết xác minh trong email hoặc dán toàn bộ chuỗi token xác minh (chuỗi ký tự dài, không phải mã OTP 6 số) vào ô bên dưới.',
+    guardianVerifyLinkNotice:
+      'Đã nhận mã xác minh từ liên kết trong email. Nhấn nút "Xác minh email" bên dưới để hoàn tất xác minh.',
+    guardianVerifyTokenLabel: 'Chuỗi token xác minh email',
+    guardianVerifyTokenPlaceholder:
+      'Dán chuỗi token xác minh từ email (chuỗi dài, không phải mã OTP 6 số)',
     guardianVerifySubmit: 'Xác minh email',
+    guardianVerifyResendSubmit: 'Gửi lại email xác minh',
     guardianVerifySuccess: 'Đã xác minh email thành công. Bạn có thể đăng nhập để sử dụng không gian gia đình.',
+    guardianAlreadyVerifiedNotice:
+      'Email người giám hộ đã được xác minh. Không gian gia đình của bạn đã sẵn sàng.',
+    guardianVerifyResendLoginHint:
+      'Nếu bạn chưa nhận được email, hãy đăng nhập bằng email và mật khẩu vừa tạo để yêu cầu gửi lại email xác minh.',
+    mailStatusUnconfigured: 'Chức năng gửi email xác minh chưa được cấu hình.',
+    mailStatusDelivered: 'Email xác minh đã được gửi. Vui lòng kiểm tra hộp thư của bạn.',
+    mailStatusFailed: 'Không thể gửi email xác minh lúc này. Bạn có thể thử gửi lại.',
     orgCodeLabel: 'Mã trường hoặc Mã gia đình',
     orgCodePlaceholder: 'Ví dụ: MIMORA01 hoặc FAM-XXXXXX',
     orgUsernameLabel: 'Tên tài khoản học sinh',
@@ -68,6 +79,31 @@ export const viMessages = {
     switchOrgMenuLabel: 'Đổi trường',
     sessionRestoredNotice: 'Phiên làm việc đã được khôi phục an toàn.',
     sessionExpiredNotice: 'Phiên đăng nhập đã hết hạn. Vui lòng đăng nhập lại.',
+    demoBadgeLabel: 'Chế độ trình diễn cuộc thi · Dữ liệu mẫu tổng hợp',
+    demoTitle: 'Trải nghiệm MIMORA',
+    demoSubtitle: 'Chọn vai trò để khám phá các tính năng của MIMORA.',
+    demoRoles: {
+      admin: {
+        label: 'Trải nghiệm Quản trị viên',
+        description: 'Điều hành nền tảng, duyệt học liệu SEL và thống kê tổng hợp',
+      },
+      teacher: {
+        label: 'Trải nghiệm Giáo viên',
+        description: 'Quản lý lớp học, thư viện SEL và giao bài tại MIMORA-DEMO',
+      },
+      guardian: {
+        label: 'Trải nghiệm Phụ huynh',
+        description: 'Không gian gia đình, chương trình học tại nhà và tiến độ an toàn',
+      },
+      student_school: {
+        label: 'Trải nghiệm Học sinh – Trường học',
+        description: 'Góc học tập và bài tập SEL của lớp học tại trường',
+      },
+      student_family: {
+        label: 'Trải nghiệm Học sinh – Gia đình',
+        description: 'Không gian học tập tại nhà độc lập trong Gia đình Demo',
+      },
+    },
   },
   errors: {
     INVALID_CREDENTIALS: 'Thông tin đăng nhập không chính xác hoặc tài khoản chưa sẵn sàng.',
@@ -87,7 +123,8 @@ export const viMessages = {
     GUARDIAN_EMAIL_VERIFICATION_REQUIRED:
       'Tài khoản người giám hộ cần xác minh email trước khi quản lý không gian gia đình và hồ sơ học sinh.',
     EMAIL_VERIFICATION_INVALID_OR_EXPIRED:
-      'Mã xác minh email không hợp lệ, đã sử dụng hoặc đã hết hạn.',
+      'Liên kết hoặc chuỗi token xác minh email không hợp lệ, đã sử dụng hoặc đã hết hạn.',
+    EMAIL_ALREADY_VERIFIED: 'Email người giám hộ đã được xác minh trước đó.',
     INVITATION_INVALID_OR_EXPIRED:
       'Mã liên kết không hợp lệ, đã được sử dụng, đã thu hồi hoặc đã hết hạn.',
     FAMILY_USERNAME_TAKEN:
@@ -95,6 +132,8 @@ export const viMessages = {
     GUARDIAN_LINK_ALREADY_EXISTS:
       'Học sinh này đã được liên kết với tài khoản của bạn trong không gian gia đình.',
     VALIDATION_ERROR: 'Thông tin nhập vào chưa hợp lệ. Vui lòng kiểm tra lại.',
+    DEMO_MODE_DISABLED: 'Tính năng trải nghiệm nhanh hiện chưa được bật trên môi trường này.',
+    DEMO_ACCOUNT_UNAVAILABLE: 'Tài khoản trải nghiệm cho vai trò này hiện chưa sẵn sàng.',
     UNKNOWN: 'Đã xảy ra sự cố ngoài ý muốn. Vui lòng thử lại.',
   },
   admin: {

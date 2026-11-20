@@ -5,10 +5,10 @@ import {
   mysqlTable,
   text,
 } from 'drizzle-orm/mysql-core';
-import { uuidChar36 } from './_shared';
-import { activityAttempts, assignments } from './assignments';
-import { classes } from './classes';
-import { organizationMemberships } from './identity';
+import { uuidChar36 } from './_shared.ts';
+import { activityAttempts, assignments } from './assignments.ts';
+import { classes } from './classes.ts';
+import { organizationMemberships } from './identity.ts';
 
 /**
  * 3.20 teacher_observations (Strictly author-only private pedagogical notes)

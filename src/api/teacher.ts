@@ -108,7 +108,7 @@ export const teacherApi = {
   },
 
   // Published SEL Library (read-only)
-  listPublishedLibrary(
+  async listPublishedLibrary(
     query: {
       page?: number;
       limit?: number;
@@ -118,17 +118,33 @@ export const teacherApi = {
     } = {},
     fetchImpl?: typeof fetch
   ) {
-    return apiRequest<PaginatedResult<SafeTeacherLibraryContentView>>(
+    const res = await apiRequest<PaginatedResult<SafeTeacherLibraryContentView>>(
       `/library/content${buildQuery(query)}`,
       { method: 'GET', fetchImpl }
     );
+    return {
+      ...res,
+      items: res.items.map((it) => ({
+        ...it,
+        itemId: it.itemId || it.contentItemId || '',
+        versionId: it.versionId || it.publishedVersionId || '',
+      })),
+    };
   },
 
-  getPublishedLibraryItem(itemId: string, fetchImpl?: typeof fetch) {
-    return apiRequest<{ status: 'ok'; item: SafeTeacherLibraryContentView }>(
+  async getPublishedLibraryItem(itemId: string, fetchImpl?: typeof fetch) {
+    const res = await apiRequest<{ status: 'ok'; item: SafeTeacherLibraryContentView }>(
       `/library/content/${encodeURIComponent(itemId)}`,
       { method: 'GET', fetchImpl }
     );
+    return {
+      ...res,
+      item: {
+        ...res.item,
+        itemId: res.item.itemId || res.item.contentItemId || '',
+        versionId: res.item.versionId || res.item.publishedVersionId || '',
+      },
+    };
   },
 
   // Assignments, Targets, Progress & Read-only Attempts

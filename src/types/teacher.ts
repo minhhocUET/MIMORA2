@@ -2,6 +2,8 @@ import type { CanonicalContentType } from './chapter.ts';
 import type { ContentMetadataJson } from './admin.ts';
 
 export interface SafeTeacherLibraryContentView {
+  contentItemId?: string;
+  publishedVersionId?: string;
   itemId: string;
   slug: string;
   contentType: CanonicalContentType;

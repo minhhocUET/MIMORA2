@@ -24,10 +24,10 @@ Tài liệu phân tách rõ giữa thành phần **`[IMPLEMENTED]`** (đã có t
 
 ## 3. Express API & Same-Origin Server `[IMPLEMENTED - PoC]`
 
-- **Entrypoint:** `/server.ts` chạy qua `tsx server.ts` trong development (hỗ trợ parse `--port` và `--host` do `control-plane-api` truyền vào).
+- **Entrypoint:** `/server.ts` chạy qua `npm run dev` (`tsx server.ts --port=3000`) trong development (`cliArgs.port ?? serverConfig.port`, `cliArgs.host ?? serverConfig.host`). Trong container AI Studio, Cloud Run đặt `PORT=8080` (dành cho `nginx`), còn `control-plane-api` truyền `--port 3000 --host 0.0.0.0` (kèm `PORT=3000`, `HOST=0.0.0.0`, `DISABLE_HMR=true`) khi khởi chạy managed dev process; cờ `--port=3000` trong `package.json` đảm bảo `npm run dev` không bị `EADDRINUSE` trên `:8080` ngay cả khi chạy trực tiếp từ shell hoặc môi trường kế thừa `PORT=8080`.
 - **Middleware ordering đã triển khai:**
   1. `app.set('trust proxy', 1)`
-  2. Các route API `/api/v1/*` (`GET /api/v1/health`, `/api/v1/cookie-test/*`, `GET /api/v1/db/health`)
+  2. Các route API `/api/v1/*` (`GET /api/v1/health`, `/api/v1/cookie-test/*`, `GET /api/v1/db/health`, và toàn bộ API nghiệp vụ)
   3. Fallback `404` JSON cho mọi route `/api/*` không khớp (ngăn rơi nhầm xuống Vite SPA HTML fallback)
   4. `vite.middlewares` (`createServer` với `middlewareMode: true`, `appType: 'spa'`)
   5. Error handler tập trung (`vite.ssrFixStacktrace` + JSON `500`)

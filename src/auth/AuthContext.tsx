@@ -17,6 +17,7 @@ import type {
   ApiErrorInfo,
   AuthContextPayload,
   ChangePasswordRequest,
+  DemoPersona,
   LoginRequest,
   MvpRole,
 } from '../types/auth.ts';
@@ -29,10 +30,12 @@ export interface AuthState {
   context: AuthContextPayload | null;
   resolvedRole: MvpRole | null;
   authNotice: ApiErrorInfo | null;
+  demoModeEnabled: boolean;
   locale: AppLocale;
   setLocale: (locale: AppLocale) => void;
   refreshMe: () => Promise<AuthContextPayload | null>;
   login: (input: LoginRequest) => Promise<AuthContextPayload>;
+  loginDemoPersona: (persona: DemoPersona) => Promise<AuthContextPayload>;
   switchOrganization: (organizationId: string) => Promise<AuthContextPayload>;
   changePassword: (input: ChangePasswordRequest) => Promise<void>;
   logout: () => Promise<void>;
@@ -69,6 +72,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [status, setStatus] = useState<AuthStatus>('restoring');
   const [context, setContext] = useState<AuthContextPayload | null>(null);
   const [authNotice, setAuthNotice] = useState<ApiErrorInfo | null>(null);
+  const [demoModeEnabled, setDemoModeEnabled] = useState<boolean>(false);
   const [locale, setLocale] = useState<AppLocale>(DEFAULT_APP_LOCALE);
 
   const refreshMe = useCallback(async (): Promise<AuthContextPayload | null> => {
@@ -94,6 +98,25 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, [refreshMe]);
 
   useEffect(() => {
+    let active = true;
+    authApi
+      .getHealth()
+      .then((health) => {
+        if (active) {
+          setDemoModeEnabled(health.demoAccessEnabled === true);
+        }
+      })
+      .catch(() => {
+        if (active) {
+          setDemoModeEnabled(false);
+        }
+      });
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  useEffect(() => {
     return subscribeUnauthorized((info) => {
       setContext((prev) => {
         if (!prev) {
@@ -109,6 +132,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const login = useCallback(async (input: LoginRequest) => {
     setAuthNotice(null);
     const payload = await authApi.login(input);
+    setContext(payload);
+    setStatus('authenticated');
+    return payload;
+  }, []);
+
+  const loginDemoPersona = useCallback(async (persona: DemoPersona) => {
+    setAuthNotice(null);
+    const payload = await authApi.loginDemoPersona(persona);
     setContext(payload);
     setStatus('authenticated');
     return payload;
@@ -170,10 +201,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       context,
       resolvedRole,
       authNotice,
+      demoModeEnabled,
       locale,
       setLocale,
       refreshMe,
       login,
+      loginDemoPersona,
       switchOrganization,
       changePassword,
       logout,
@@ -184,9 +217,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       context,
       resolvedRole,
       authNotice,
+      demoModeEnabled,
       locale,
       refreshMe,
       login,
+      loginDemoPersona,
       switchOrganization,
       changePassword,
       logout,

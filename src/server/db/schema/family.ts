@@ -12,8 +12,8 @@ import {
   asciiVarchar64,
   emailVarchar255,
   uuidChar36,
-} from './_shared';
-import { organizations, users } from './identity';
+} from './_shared.ts';
+import { organizations, users } from './identity.ts';
 
 /**
  * 4.1 email_verification_tokens

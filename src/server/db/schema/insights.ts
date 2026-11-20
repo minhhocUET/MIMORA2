@@ -9,8 +9,8 @@ import {
   unique,
   varchar,
 } from 'drizzle-orm/mysql-core';
-import { uuidChar36 } from './_shared';
-import { organizations } from './identity';
+import { uuidChar36 } from './_shared.ts';
+import { organizations } from './identity.ts';
 
 /**
  * 3.21 org_insight_daily_snapshots (Anonymized aggregate rollup for Platform Admin)

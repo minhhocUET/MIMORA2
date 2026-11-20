@@ -1,29 +1,57 @@
 import { MailCheck, RefreshCw } from 'lucide-react';
-import { useState, type FormEvent } from 'react';
+import { useEffect, useState, type FormEvent } from 'react';
 import { ApiClientError, authApi } from '../../api/client.ts';
 import { useAuth } from '../../auth/AuthContext.tsx';
 import { getMessages, resolveLocalizedErrorMessage } from '../../i18n/index.ts';
+import type { MailDeliveryStatus } from '../../types/auth.ts';
 import { Alert, Button, Card, CardContent, CardHeader, FormField, Input } from '../ui/index.ts';
 
 export interface GuardianVerificationCardProps {
   onToast: (msg: string) => void;
+  initialToken?: string | null;
+  onConsumeInitialToken?: () => void;
 }
 
-export function GuardianVerificationCard({ onToast }: GuardianVerificationCardProps) {
+export function GuardianVerificationCard({
+  onToast,
+  initialToken,
+  onConsumeInitialToken,
+}: GuardianVerificationCardProps) {
   const { context, refreshMe, locale } = useAuth();
   const t = getMessages(locale);
 
   const [token, setToken] = useState('');
+  const [fromVerifyLink, setFromVerifyLink] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [resending, setResending] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
-  const [resendInfo, setResendInfo] = useState<string | null>(null);
+  const [alreadyVerifiedMsg, setAlreadyVerifiedMsg] = useState<string | null>(null);
+  const [resendStatus, setResendStatus] = useState<MailDeliveryStatus | null>(null);
+
+  useEffect(() => {
+    if (!initialToken) {
+      return;
+    }
+    setToken(initialToken);
+    setFromVerifyLink(true);
+    setErrorMsg(null);
+    onConsumeInitialToken?.();
+  }, [initialToken, onConsumeInitialToken]);
+
+  const handleAlreadyVerified = async () => {
+    setErrorMsg(null);
+    setResendStatus(null);
+    setAlreadyVerifiedMsg(t.auth.guardianAlreadyVerifiedNotice);
+    await refreshMe();
+    onToast(t.auth.guardianAlreadyVerifiedNotice);
+  };
 
   const handleVerify = async (e: FormEvent) => {
     e.preventDefault();
     setErrorMsg(null);
+    setAlreadyVerifiedMsg(null);
     if (!token.trim()) {
-      setErrorMsg('Vui lòng nhập mã xác minh email.');
+      setErrorMsg(t.auth.validationRequired);
       return;
     }
 
@@ -31,10 +59,13 @@ export function GuardianVerificationCard({ onToast }: GuardianVerificationCardPr
     try {
       await authApi.verifyGuardianEmail({ token: token.trim() });
       setToken('');
+      setFromVerifyLink(false);
       await refreshMe();
       onToast(t.auth.guardianVerifySuccess);
     } catch (err) {
-      if (err instanceof ApiClientError) {
+      if (err instanceof ApiClientError && err.info.code === 'EMAIL_ALREADY_VERIFIED') {
+        await handleAlreadyVerified();
+      } else if (err instanceof ApiClientError) {
         setErrorMsg(resolveLocalizedErrorMessage(err.info, locale));
       } else {
         setErrorMsg(t.errors.UNKNOWN);
@@ -46,20 +77,20 @@ export function GuardianVerificationCard({ onToast }: GuardianVerificationCardPr
 
   const handleResend = async () => {
     setErrorMsg(null);
-    setResendInfo(null);
+    setAlreadyVerifiedMsg(null);
+    setResendStatus(null);
     setResending(true);
     try {
       const res = await authApi.resendGuardianVerification();
       if (res.alreadyVerified) {
-        await refreshMe();
-        onToast('Email của bạn đã được xác minh.');
+        await handleAlreadyVerified();
         return;
       }
-      setResendInfo(
-        'Đã tạo yêu cầu mã xác minh mới (trạng thái: pending_verification). Máy chủ hiện chưa cấu hình dịch vụ gửi email tự động.'
-      );
+      setResendStatus(res.mailDelivery);
     } catch (err) {
-      if (err instanceof ApiClientError) {
+      if (err instanceof ApiClientError && err.info.code === 'EMAIL_ALREADY_VERIFIED') {
+        await handleAlreadyVerified();
+      } else if (err instanceof ApiClientError) {
         setErrorMsg(resolveLocalizedErrorMessage(err.info, locale));
       } else {
         setErrorMsg(t.errors.UNKNOWN);
@@ -76,8 +107,13 @@ export function GuardianVerificationCard({ onToast }: GuardianVerificationCardPr
         description={t.guardian.verificationPendingBody}
       />
       <CardContent className="space-y-4">
-        <Alert variant="warning" title="Trạng thái: Chờ xác minh email (pending_verification)">
-          <p className="leading-relaxed">{t.auth.guardianVerifyNotice}</p>
+        <Alert
+          variant={fromVerifyLink ? 'info' : 'warning'}
+          title={t.auth.guardianVerifyTitle}
+        >
+          <p className="leading-relaxed">
+            {fromVerifyLink ? t.auth.guardianVerifyLinkNotice : t.auth.guardianVerifyNotice}
+          </p>
           {context?.user.email && (
             <p className="mt-1 font-mono text-xs text-[var(--mimora-muted)]">
               Email tài khoản: {context.user.email}
@@ -85,7 +121,22 @@ export function GuardianVerificationCard({ onToast }: GuardianVerificationCardPr
           )}
         </Alert>
 
-        {resendInfo && <Alert variant="info">{resendInfo}</Alert>}
+        {alreadyVerifiedMsg && <Alert variant="success">{alreadyVerifiedMsg}</Alert>}
+
+        {resendStatus && (
+          <Alert
+            variant={
+              resendStatus.configured && resendStatus.delivered ? 'success' : 'warning'
+            }
+          >
+            {!resendStatus.configured
+              ? t.auth.mailStatusUnconfigured
+              : resendStatus.delivered
+                ? t.auth.mailStatusDelivered
+                : t.auth.mailStatusFailed}
+          </Alert>
+        )}
+
         {errorMsg && <Alert variant="danger">{errorMsg}</Alert>}
 
         <form onSubmit={(e) => void handleVerify(e)} className="space-y-4">
@@ -117,7 +168,7 @@ export function GuardianVerificationCard({ onToast }: GuardianVerificationCardPr
               onClick={() => void handleResend()}
               leftIcon={<RefreshCw className="h-4 w-4" aria-hidden="true" />}
             >
-              Yêu cầu cấp lại mã xác minh
+              {t.auth.guardianVerifyResendSubmit}
             </Button>
           </div>
         </form>

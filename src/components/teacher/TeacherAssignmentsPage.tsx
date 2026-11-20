@@ -236,9 +236,9 @@ export function TeacherAssignmentsPage({ locale, onToast }: TeacherAssignmentsPa
         dueAt: dueIso,
         status: createStatus,
         items: selectedItems.map((libItem, idx) => ({
-          contentVersionId: libItem.versionId,
+          contentVersionId: (libItem.publishedVersionId ?? libItem.versionId) ?? '',
           sortOrder: idx,
-          expectedContentItemId: libItem.itemId,
+          expectedContentItemId: libItem.contentItemId ?? libItem.itemId,
         })),
         targetStudentMembershipIds: selectedStudentIds,
       });
@@ -845,7 +845,7 @@ export function TeacherAssignmentsPage({ locale, onToast }: TeacherAssignmentsPa
               <div className="space-y-1.5 max-h-52 overflow-y-auto pr-1">
                 {publishedLibrary.map((lib) => (
                   <div
-                    key={lib.versionId}
+                    key={lib.publishedVersionId ?? lib.versionId ?? lib.slug}
                     className="flex items-center justify-between gap-2 rounded border border-[var(--mimora-border)] px-2.5 py-1.5 text-xs"
                   >
                     <div className="min-w-0">
@@ -878,7 +878,7 @@ export function TeacherAssignmentsPage({ locale, onToast }: TeacherAssignmentsPa
                 <div className="space-y-1.5 max-h-52 overflow-y-auto pr-1">
                   {selectedItems.map((it, idx) => (
                     <div
-                      key={`${it.versionId}-${idx}`}
+                      key={`${it.publishedVersionId ?? it.versionId ?? it.slug}-${idx}`}
                       className="flex items-center justify-between gap-2 rounded bg-[var(--mimora-surface-mint)]/40 border border-[var(--mimora-border)] px-2.5 py-1.5 text-xs"
                     >
                       <span className="truncate">

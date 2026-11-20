@@ -127,3 +127,16 @@ Mọi vấn đề kỹ thuật, giới hạn môi trường và hạng mục ch�
   5. **HTTP & Replay Envelope Parity:** `family-learning.routes.ts` nhận `Idempotency-Key` header trên `/turns`, `/complete`, `/abandon` và trả `{ status: 'ok', idempotentReplay, attempt }` trên `/complete` và `/abandon`; `attempts.routes.ts` ép HTTP `/abandon` bắt buộc `confirmed === true` (trong khi giữ chữ ký `confirmed?: boolean` nội bộ cho test `P2-06`).
 - **Hạng mục còn mở để đóng hoàn toàn `KI-12`:** Chưa có `TIDB_*` secrets nên chưa thể chạy kiểm thử `SELECT ... FOR UPDATE` + `uq_family_attempts_single_in_progress` / `uq_family_turns_attempt_idx` trên TiDB Cloud thật sau khi chạy `0001` -> `0002` (`KI-11`).
 - **Cách xác minh / Điều kiện đóng:** Sau khi thực thi migration `0001` -> `0002` theo `project-docs/TIDB_MIGRATION_RUNBOOK.md`, chạy bộ kiểm thử tích hợp live TiDB cho `family_activity_attempts` tương tự `T-CONC-01..03` và xác nhận `attempt-parity.test.ts` PASS toàn bộ.
+
+---
+
+## KI-13 — Managed Dev Server Startup Blocked by `TRUSTED_ORIGINS="APP_URL"` Secret Value (`P4-02.1B`)
+- **Trạng thái:** RESOLVED (2026-11-19)
+- **Mức độ:** HIGH *(lịch sử)*
+- **Mô tả:**
+  1. `package.json` đã cập nhật `"dev": "tsx server.ts --port=3000"` để tránh `EADDRINUSE` với Nginx (`0.0.0.0:8080`, do Cloud Run đặt `PORT=8080` trong shell trong khi Nginx proxy tới `localhost:3000`).
+  2. AI Studio Secrets inject `TRUSTED_ORIGINS="APP_URL"` vào managed dev server process, trước đó khiến `src/server/config/env.ts` từ chối giá trị không phải `http/https` origin (`Invalid server configuration for: TRUSTED_ORIGINS.`) và thoát tiến trình trước khi listen `:3000`.
+- **Cách khắc phục & Bằng chứng đóng issue:**
+  - Bổ sung `resolveTrustedOriginEntry()` trong `src/server/config/env.ts` để phân giải token `APP_URL` (`$APP_URL`, `${APP_URL}`) sang exact origin của `env.APP_URL` khi `APP_URL` hợp lệ (vẫn từ chối khi thiếu `APP_URL` và giữ nguyên từ chối wildcard/path/query/chuỗi tùy ý; kiểm chứng bằng `src/server/config/env.test.ts` + `src/server/db/tidb.test.ts`: `12 pass, 0 fail, 1 skip live-TiDB-in-subshell`).
+  - Sau `restart_dev_server`: Node.js chạy ổn định trên `0.0.0.0:3000`, Nginx chạy trên `0.0.0.0:8080`, cả `:3000` và `:8080` trả `HTTP 200` cho `/api/v1/health` và `/api/v1/db/health` (`mode: "tidb"`, `durablePersistence: true`, `serverVersion: "8.0.11-TiDB-v8.5.3-serverless"`).
+  - Read-only TiDB verification xác nhận `DATABASE() = "test"`, `CURRENT_USER() = "3rtMqHg6yoxMH5d.mimora_runtime@%"`, `Ssl_version = "TLSv1.3"`, và `SHOW GRANTS` chỉ gồm `USAGE ON *.*` + `SELECT,INSERT,UPDATE,DELETE ON test.*`. `TIDB_MIGRATOR_*` vẫn vắng mặt hoàn toàn.

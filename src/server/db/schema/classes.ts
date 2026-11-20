@@ -11,8 +11,8 @@ import {
   unique,
   varchar,
 } from 'drizzle-orm/mysql-core';
-import { uuidChar36 } from './_shared';
-import { organizationMemberships, organizations, users } from './identity';
+import { uuidChar36 } from './_shared.ts';
+import { organizationMemberships, organizations, users } from './identity.ts';
 
 /**
  * 3.5 classes

@@ -12,7 +12,7 @@ import {
   asciiVarchar64,
   emailVarchar255,
   uuidChar36,
-} from './_shared';
+} from './_shared.ts';
 
 /**
  * 3.1 organizations (Tenant root)

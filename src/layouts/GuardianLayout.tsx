@@ -1,5 +1,5 @@
 import { BarChart3, Home, KeyRound, LogOut, Settings, Users } from 'lucide-react';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useAuth } from '../auth/AuthContext.tsx';
 import { ChangePasswordModal } from '../components/auth/ChangePasswordModal.tsx';
 import { GuardianProgressPage } from '../components/guardian/GuardianProgressPage.tsx';
@@ -13,7 +13,15 @@ import { getMessages } from '../i18n/index.ts';
 
 type GuardianSection = 'workspaces' | 'students' | 'progress' | 'settings';
 
-export function GuardianLayout() {
+export interface GuardianLayoutProps {
+  initialVerifyToken?: string | null;
+  onConsumeInitialVerifyToken?: () => void;
+}
+
+export function GuardianLayout({
+  initialVerifyToken,
+  onConsumeInitialVerifyToken,
+}: GuardianLayoutProps) {
   const { context, logout, locale } = useAuth();
   const t = getMessages(locale);
 
@@ -21,11 +29,23 @@ export function GuardianLayout() {
   const [changePwdOpen, setChangePwdOpen] = useState(false);
   const [toastMsg, setToastMsg] = useState<string | null>(null);
 
+  const emailVerified = Boolean(context?.user.emailVerified);
+
+  useEffect(() => {
+    if (!initialVerifyToken || !context) {
+      return;
+    }
+    if (emailVerified) {
+      setToastMsg(t.auth.guardianAlreadyVerifiedNotice);
+      onConsumeInitialVerifyToken?.();
+    } else if (section === 'settings') {
+      setSection('workspaces');
+    }
+  }, [initialVerifyToken, context, emailVerified, section, onConsumeInitialVerifyToken, t.auth.guardianAlreadyVerifiedNotice]);
+
   if (!context) {
     return null;
   }
-
-  const emailVerified = Boolean(context.user.emailVerified);
 
   const navItems: Array<{ id: GuardianSection; label: string; icon: React.ReactNode }> = [
     {
@@ -94,7 +114,11 @@ export function GuardianLayout() {
       )}
 
       {!emailVerified && section !== 'settings' ? (
-        <GuardianVerificationCard onToast={setToastMsg} />
+        <GuardianVerificationCard
+          onToast={setToastMsg}
+          initialToken={initialVerifyToken}
+          onConsumeInitialToken={onConsumeInitialVerifyToken}
+        />
       ) : (
         <>
           {section === 'workspaces' && (

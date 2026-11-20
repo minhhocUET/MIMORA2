@@ -3,6 +3,7 @@ import type {
   ApiErrorInfo,
   AuthContextPayload,
   ChangePasswordRequest,
+  DemoPersona,
   GuardianRegisterRequest,
   GuardianRegisterResponse,
   LoginRequest,
@@ -217,6 +218,7 @@ export async function apiRequest<T>(
       const normalizedPath = url.replace(/^\/api\/v1/, '');
       if (
         normalizedPath !== '/auth/login' &&
+        normalizedPath !== '/demo/login' &&
         normalizedPath !== '/auth/me' &&
         normalizedPath !== '/auth/logout'
       ) {
@@ -259,6 +261,7 @@ export async function apiRequest<T>(
 export interface HealthApiResponse {
   status: string;
   service: string;
+  demoAccessEnabled?: boolean;
 }
 
 export type AuthEnvelopeResponse = { status: 'ok' } & AuthContextPayload;
@@ -295,6 +298,19 @@ export const authApi = {
     const res = await apiRequest<AuthEnvelopeResponse>('/auth/login', {
       method: 'POST',
       body: input,
+      fetchImpl,
+    });
+    setInMemoryCsrfToken(res.csrfToken);
+    return res;
+  },
+
+  async loginDemoPersona(
+    persona: DemoPersona,
+    fetchImpl?: typeof fetch
+  ): Promise<AuthContextPayload> {
+    const res = await apiRequest<AuthEnvelopeResponse>('/demo/login', {
+      method: 'POST',
+      body: { persona },
       fetchImpl,
     });
     setInMemoryCsrfToken(res.csrfToken);
@@ -357,9 +373,9 @@ export const authApi = {
 
   async resendGuardianVerification(fetchImpl?: typeof fetch): Promise<{
     status: 'ok';
-    alreadyVerified: boolean;
-    requiresEmailVerification: boolean;
-    mailDelivery?: MailDeliveryStatus;
+    alreadyVerified?: boolean;
+    requiresEmailVerification?: boolean;
+    mailDelivery: MailDeliveryStatus;
   }> {
     return apiRequest('/auth/guardian/resend-verification', {
       method: 'POST',

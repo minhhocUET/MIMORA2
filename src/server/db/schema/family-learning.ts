@@ -13,10 +13,10 @@ import {
   unique,
   varchar,
 } from 'drizzle-orm/mysql-core';
-import { uuidChar36 } from './_shared';
-import { contentVersions } from './content';
-import { familyWorkspaces } from './family';
-import { users } from './identity';
+import { uuidChar36 } from './_shared.ts';
+import { contentVersions } from './content.ts';
+import { familyWorkspaces } from './family.ts';
+import { users } from './identity.ts';
 
 /**
  * 4.8 family_programs

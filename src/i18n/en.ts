@@ -32,11 +32,22 @@ export const enMessages = {
     guardianRegisterSubmitting: 'Creating account...',
     guardianVerifyTitle: 'Verify guardian email',
     guardianVerifyNotice:
-      'Your account is pending email verification. No outbound email provider is currently configured, so a verification email could not be sent automatically.',
+      'Your account is pending email verification. Open the verification link in your email or paste the full verification token (a long character token, not a 6-digit OTP) below.',
+    guardianVerifyLinkNotice:
+      'Verification token received from your email link. Click "Verify email" below to confirm.',
     guardianVerifyTokenLabel: 'Email verification token',
-    guardianVerifyTokenPlaceholder: 'Enter verification token',
+    guardianVerifyTokenPlaceholder:
+      'Paste the full verification token from your email (not a 6-digit OTP)',
     guardianVerifySubmit: 'Verify email',
+    guardianVerifyResendSubmit: 'Resend verification email',
     guardianVerifySuccess: 'Email verified successfully. You can now sign in to your family workspace.',
+    guardianAlreadyVerifiedNotice:
+      'Guardian email is already verified. Your family workspace is ready.',
+    guardianVerifyResendLoginHint:
+      'If you did not receive the email, sign in with your newly created email and password to request another verification email.',
+    mailStatusUnconfigured: 'Email verification delivery is not configured.',
+    mailStatusDelivered: 'Verification email has been sent. Please check your inbox.',
+    mailStatusFailed: 'Unable to send the verification email right now. You can try resending.',
     orgCodeLabel: 'School or Family code',
     orgCodePlaceholder: 'Example: MIMORA01 or FAM-XXXXXX',
     orgUsernameLabel: 'Student username',
@@ -67,6 +78,31 @@ export const enMessages = {
     switchOrgMenuLabel: 'Switch school',
     sessionRestoredNotice: 'Your session was restored securely.',
     sessionExpiredNotice: 'Your session has expired. Please sign in again.',
+    demoBadgeLabel: 'Competition Demo Mode · Synthetic Sample Data',
+    demoTitle: 'Trải nghiệm MIMORA',
+    demoSubtitle: 'Chọn vai trò để khám phá các tính năng của MIMORA.',
+    demoRoles: {
+      admin: {
+        label: 'Trải nghiệm Quản trị viên',
+        description: 'Platform governance, SEL content review, and aggregate insights',
+      },
+      teacher: {
+        label: 'Trải nghiệm Giáo viên',
+        description: 'Classrooms, published SEL library, and assignments',
+      },
+      guardian: {
+        label: 'Trải nghiệm Phụ huynh',
+        description: 'Family workspace, home programs, and privacy-safe progress',
+      },
+      student_school: {
+        label: 'Trải nghiệm Học sinh – Trường học',
+        description: 'School SEL learning activities and comfort tools',
+      },
+      student_family: {
+        label: 'Trải nghiệm Học sinh – Gia đình',
+        description: 'Teacher-free Family Workspace learning experience',
+      },
+    },
   },
   errors: {
     INVALID_CREDENTIALS: 'Incorrect credentials or account unavailable.',
@@ -85,7 +121,8 @@ export const enMessages = {
     GUARDIAN_EMAIL_VERIFICATION_REQUIRED:
       'Guardian email verification is required before managing family workspaces and student links.',
     EMAIL_VERIFICATION_INVALID_OR_EXPIRED:
-      'Verification token is invalid, already used, or expired.',
+      'Verification link or token is invalid, already used, or expired.',
+    EMAIL_ALREADY_VERIFIED: 'Guardian email is already verified.',
     INVITATION_INVALID_OR_EXPIRED:
       'Invitation code is invalid, already used, revoked, or expired.',
     FAMILY_USERNAME_TAKEN:
@@ -93,6 +130,8 @@ export const enMessages = {
     GUARDIAN_LINK_ALREADY_EXISTS:
       'This student is already linked to your account in this family workspace.',
     VALIDATION_ERROR: 'Submitted fields are invalid. Please review and try again.',
+    DEMO_MODE_DISABLED: 'Quick demo access is currently disabled in this environment.',
+    DEMO_ACCOUNT_UNAVAILABLE: 'The demo account for this role is currently unavailable.',
     UNKNOWN: 'An unexpected error occurred. Please try again.',
   },
   admin: {

@@ -1,6 +1,12 @@
 export type MvpRole = 'platform_admin' | 'teacher' | 'student' | 'guardian';
 export type OrgRole = 'teacher' | 'student';
 export type SessionScope = 'platform_admin' | 'teacher' | 'student' | 'guardian';
+export type DemoPersona =
+  | 'admin'
+  | 'teacher'
+  | 'guardian'
+  | 'student_school'
+  | 'student_family';
 
 export interface SafeUserView {
   id: string;
@@ -61,10 +67,12 @@ export interface GuardianRegisterRequest {
   password: string;
 }
 
+export type MailProviderName = 'resend' | null;
+
 export interface MailDeliveryStatus {
-  configured: false;
-  provider: null;
-  delivered: false;
+  configured: boolean;
+  provider: MailProviderName;
+  delivered: boolean;
   verificationState: 'pending_verification';
 }
 

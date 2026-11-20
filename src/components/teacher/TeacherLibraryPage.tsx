@@ -146,7 +146,11 @@ export function TeacherLibraryPage({ locale }: TeacherLibraryPageProps) {
           </p>
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
             {items.map((item) => (
-              <Card key={item.versionId} padding="md" className="flex flex-col justify-between">
+              <Card
+                key={item.publishedVersionId ?? item.versionId ?? item.contentItemId ?? item.itemId ?? item.slug}
+                padding="md"
+                className="flex flex-col justify-between"
+              >
                 <CardHeader
                   title={item.title}
                   description={item.summary ?? `Slug: ${item.slug}`}
